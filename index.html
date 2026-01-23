@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RemoteTherapist">
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
+        .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; }
+        .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
+        .container { max-width: 600px; margin: 15px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        label { font-weight: bold; display: block; margin-top: 20px; color: #333; }
+        input, select, textarea { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; background: #fff; }
+        .face-img { width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; margin: 15px 0 10px 0; display: block; }
+        .load-section { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        #success-message { display: none; text-align: center; padding: 50px 20px; }
+        .count-hint { font-size: 13px; color: #1a73e8; font-weight: bold; margin-top: 6px; text-align: right; }
+    </style>
+</head>
+<body>
+    <div class="tab-menu">
+        <button class="tab-btn active" onclick="switchTab('input', this)">入力</button>
+        <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
+    </div>
+    <div id="tab-input" class="tab-content">
+        <div class="container" id="form-container">
+            <div class="load-section">
+                <input type="email" id="search-email" placeholder="メールアドレス" style="width:70%;">
+                <button type="button" onclick="loadPrev()" style="width:25%; background:#1a73e8; color:white; border:none; padding:10px; border-radius:8px;">読込</button>
+            </div>
+            <form id="mainForm">
+                <input type="hidden" name="rowNum" id="rowNum">
+                <div id="fields">読み込み中...</div>
+                <button type="button" id="submit-btn" onclick="submitForm(this)" style="background:#1a73e8; color:white; border:none; padding:18px; width:100%; border-radius:8px; font-size:18px; margin-top:30px;">データを送信</button>
+            </form>
+        </div>
+        <div class="container" id="success-message">
+            <h2>送信完了</h2>
+            <p>ご苦労様でした。フィードバックをお待ちください。</p>
+        </div>
+    </div>
+    <div id="tab-face" class="tab-content" style="display:none;">
+        <div class="container">
+            <h3>Face情報</h3>
+            <img id="face-viewer" src="" class="face-img">
+        </div>
+    </div>
+
+    <script>
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzNjvIRrM9yQ4cFAxD1eth2sxDIMkKNM6cySUw2qe4Y6AgHxoTAgsS2sXLVWNDM8cyu/exec";
+        let masterData = [];
+
+        window.onload = () => {
+            fetch(GAS_URL + "?action=init").then(r => r.json()).then(res => {
+                masterData = res.lists;
+                document.getElementById('face-viewer').src = res.imagesMap['ニックネーム'] || "";
+                const fieldsDiv = document.getElementById('fields');
+                fieldsDiv.innerHTML = '';
+                res.settings.forEach(item => {
+                    const label = document.createElement('label');
+                    label.innerText = item.name;
+                    fieldsDiv.appendChild(label);
+                    let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
+                    if(item.type === 'select') {
+                        input = document.createElement('select');
+                        input.add(new Option("-- 選択 --", ""));
+                        item.options.forEach(o => input.add(new Option(o, o)));
+                    }
+                    input.name = item.name;
+                    fieldsDiv.appendChild(input);
+                });
+            });
+        };
+
+        function submitForm(btn) {
+            btn.disabled = true;
+            const data = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
+            fetch(GAS_URL, { method: "POST", body: JSON.stringify(data) }).then(() => {
+                document.getElementById('form-container').style.display = 'none';
+                document.getElementById('success-message').style.display = 'block';
+            });
+        }
+        function switchTab(id, btn) {
+            document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
+            document.getElementById('tab-' + id).style.display = 'block';
+        }
+    </script>
+</body>
+</html>
