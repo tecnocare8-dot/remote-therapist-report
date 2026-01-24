@@ -3,381 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Remote Therapist®</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
         .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
-        .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; }
-        .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
-        .container { max-width: 600px; margin: 15px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        label { font-weight: bold; display: block; margin-top: 20px; color: #333; }<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Remote Therapist®</title>
-    <style>
-        body { font-family: -apple-system, sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
-        .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
-        .container { max-width: 600px; margin: 15px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        label { font-weight: bold; display: block; margin-top: 20px; color: #333; }
-        input, select, textarea { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        
-        /* 特徴1: 課題前の図（画像）を大きく表示 */
-        .item-img { width: 100%; border-radius: 8px; border: 1px solid #ddd; margin: 20px 0 5px 0; display: block; }
-        
-        /* 特徴2: 文字数上限の表示を赤太字に */
-        .char-hint { font-size: 13px; color: #d93025; font-weight: bold; text-align: right; margin-top: 4px; }
-        
-        /* 特徴3: 転記選択数のカウンターを表示 */
-        .count-hint { font-size: 14px; color: #1a73e8; font-weight: bold; text-align: right; margin: 8px 0; background: #eef4ff; padding: 6px; border-radius: 6px; }
-        .count-limit { color: #d93025; background: #fff1f0; }
-
-        .load-section { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        .btn-main { background:#1a73e8; color:white; border:none; padding:18px; width:100%; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; margin-top:20px; }
-        #success-message { display: none; text-align: center; padding: 50px 20px; }
-    </style>
-</head>
-<body>
-
-<div class="tab-menu">
-    <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
-    <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
-</div>
-
-<div id="tab-input" class="tab-content">
-    <div class="container" id="form-container">
-        <div class="load-section">
-            <div style="display:flex; gap:10px;">
-                <input type="email" id="search-email" placeholder="メールで読込/修正" style="margin:0; flex-grow:1;">
-                <button type="button" onclick="loadPrev(this)" style="padding:10px; background:#1a73e8; color:white; border:none; border-radius:8px; width:80px;">読込</button>
-            </div>
-        </div>
-        <form id="mainForm">
-            <input type="hidden" name="rowNum" id="rowNum">
-            <div id="fields">読み込み中...</div>
-            <button type="button" onclick="submitForm(this)" class="btn-main">データを送信</button>
-        </form>
-    </div>
-    <div id="success-message" class="container">
-        <h2>送信完了</h2>
-        <button onclick="location.reload()" style="padding:10px 20px; border-radius:8px; border:1px solid #ccc; background:#fff; cursor:pointer;">戻る</button>
-    </div>
-</div>
-
-<div id="tab-face" class="tab-content" style="display:none;">
-    <div class="container">
-        <h3>Face情報</h3>
-        <p style="font-size:12px; color:#666;">※画像を指で広げて拡大できます</p>
-        <img id="face-viewer" src="" style="width:100%; border-radius:8px; border:1px solid #ddd;">
-        <h3 style="margin-top:40px; color:#1a73e8;">参考動画</h3>
-        <iframe src="https://www.youtube.com/embed/4_bGkHOccg4" width="100%" height="315" frameborder="0" allowfullscreen style="border-radius:8px;"></iframe>
-    </div>
-</div>
-
-<script>
-    // ★ここを最新のデプロイURL(/exec)に貼り付けてください★
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbzUrd_tmpfduVd_c29DndT5o8ZvyzdMUyPExgUrk09Pmr9-a7uEZ2kAo7XdgSrC_-xQ/exec";
-    let masterData = [];
-
-    window.onload = () => {
-        // action=init を付けてGASを呼び出す
-        fetch(GAS_URL + "?action=init").then(r => r.json()).then(res => {
-            masterData = res.lists;
-            if (res.imagesMap && res.imagesMap['ニックネーム']) {
-                document.getElementById('face-viewer').src = res.imagesMap['ニックネーム'];
-            }
-            const fieldsDiv = document.getElementById('fields');
-            fieldsDiv.innerHTML = '';
-            
-            res.settings.forEach(item => {
-                // 【特徴1: 課題前の図を表示】
-                if (item.name !== 'ニックネーム' && res.imagesMap && res.imagesMap[item.name]) {
-                    const img = document.createElement('img');
-                    img.src = res.imagesMap[item.name];
-                    img.className = "item-img";
-                    fieldsDiv.appendChild(img);
-                }
-
-                const label = document.createElement('label');
-                label.innerText = item.name;
-                fieldsDiv.appendChild(label);
-
-                let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
-                if (item.type === 'select' || item.type.includes('master_')) {
-                    input = document.createElement('select');
-                    if (item.type.includes('master_')) {
-                        input.className = item.type.replace('master_','') + '-input';
-                        input.dataset.group = getGroup(item.name);
-                        input.onchange = (e) => updateCascading(e.target);
-                    } else {
-                        input.add(new Option("-- 選択 --", ""));
-                        item.options.forEach(o => input.add(new Option(o, o)));
-                    }
-                } else {
-                    input.type = item.type;
-                }
-                input.name = item.name;
-                if (item.maxLength) input.maxLength = item.maxLength;
-                fieldsDiv.appendChild(input);
-
-                // 【特徴2: 文字上限を赤字で表示】
-                if (item.maxLength) {
-                    const hint = document.createElement('div');
-                    hint.className = "char-hint";
-                    hint.innerText = "※最大 " + item.maxLength + " 文字まで入力可能です";
-                    fieldsDiv.appendChild(hint);
-                }
-
-                // 【特徴3: 選択数のカウンターを表示】
-                if (item.name.includes('計画書へ転記')) {
-                    input.classList.add('transcription-target');
-                    input.addEventListener('change', (e) => validateTranscription(e.target));
-                    
-                    const countHint = document.createElement('div');
-                    countHint.className = "count-hint";
-                    countHint.innerText = "0/3 選択済み";
-                    fieldsDiv.appendChild(countHint);
-                }
-            });
-
-            document.querySelectorAll('.major-input').forEach(el => {
-                const majors = [...new Set(masterData.map(r => r[0]))];
-                el.add(new Option("-- 選択 --", ""));
-                majors.forEach(m => el.add(new Option(m, m)));
-            });
-        });
-    };
-
-    function validateTranscription(target) {
-        const count = Array.from(document.querySelectorAll('.transcription-target')).filter(el => el.value && el.value !== "" && el.value !== "-- 選択 --").length;
-        if (count > 3) {
-            alert("計画書へ転記できるのは合計3つまでです。");
-            target.value = "";
-            return validateTranscription(target);
-        }
-        document.querySelectorAll('.count-hint').forEach(hint => {
-            hint.innerText = count + "/3 選択済み (あと" + (3 - count) + "個選べます)";
-            hint.classList.toggle('count-limit', count >= 3);
-        });
-    }
-
-    function loadPrev(btn) {
-        const email = document.getElementById('search-email').value;
-        if(!email) return alert("メールを入力してください");
-        btn.innerText = "...";
-        fetch(GAS_URL + "?action=find&email=" + email).then(r => r.json()).then(res => {
-            btn.innerText = "読込";
-            if(res.error) return alert("データが見つかりませんでした");
-            document.getElementById('rowNum').value = res.rowNum;
-            for (let key in res.data) {
-                const el = document.getElementsByName(key)[0];
-                if (el) { el.value = res.data[key]; if (el.onchange) el.onchange(); }
-            }
-            validateTranscription();
-            alert("読み込み完了");
-        });
-    }
-
-    function submitForm(btn) {
-        btn.disabled = true;
-        btn.innerText = "送信中...";
-        const data = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-        fetch(GAS_URL, { method: "POST", body: JSON.stringify(data) }).then(() => {
-            document.getElementById('form-container').style.display = 'none';
-            document.getElementById('success-message').style.display = 'block';
-            window.scrollTo(0,0);
-        });
-    }
-
-    function switchTab(id, btn) {
-        document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('tab-' + id).style.display = 'block';
-        btn.classList.add('active');
-    }
-
-    function getGroup(name) {
-        const m = name.match(/(参加|活動|機能)(長期|短期)[１２３]/);
-        return m ? m[0] : 'default';
-    }
-
-    function updateCascading(target) {
-        const group = target.dataset.group;
-        const majVal = document.querySelector(`.major-input[data-group="${group}"]`).value;
-        const midEl = document.querySelector(`.middle-input[data-group="${group}"]`);
-        const minEl = document.querySelector(`.minor-input[data-group="${group}"]`);
-        if (target.classList.contains('major-input')) {
-            if(midEl) {
-                midEl.innerHTML = '<option>-- 選択 --</option>';
-                [...new Set(masterData.filter(r => r[0] === majVal).map(r => r[1]))].forEach(x => midEl.add(new Option(x, x)));
-            }
-        } else if (target.classList.contains('middle-input')) {
-            if(minEl) {
-                minEl.innerHTML = '<option>-- 選択 --</option>';
-                masterData.filter(r => r[0] === majVal && r[1] === target.value).forEach(r => minEl.add(new Option(r[2], r[2])));
-            }
-        }
-    }
-</script>
-</body>
-</html>
-        input, select, textarea { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        
-        /* 画像：フォーム内とFace情報両方で使用 */
-        .face-img { width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; margin: 15px 0 10px 0; display: block; }
-        
-        /* 文字数上限：赤字で太字にしました */
-        .char-hint { font-size: 13px; color: #d93025; font-weight: bold; text-align: right; margin-top: 4px; }
-        
-        .load-section { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        .btn-main { background:#1a73e8; color:white; border:none; padding:18px; width:100%; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; margin-top:20px; }
-        #success-message { display: none; text-align: center; padding: 50px 20px; }
+        .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .field-group { margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
+        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+        .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
+        .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; }
+        .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="tab-menu">
-        <button class="tab-btn active" onclick="switchTab('input', this)">入力</button>
+        <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
         <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
     </div>
 
     <div id="tab-input" class="tab-content">
-        <div class="container" id="form-container">
-            <div class="load-section">
-                <div style="display:flex; gap:10px;">
-                    <input type="email" id="search-email" placeholder="メールで読込/修正" style="margin:0; flex-grow:1;">
-                    <button type="button" onclick="loadPrev(this)" style="padding:10px; background:#1a73e8; color:white; border:none; border-radius:8px; width:80px;">読込</button>
-                </div>
-            </div>
+        <div class="container">
             <form id="mainForm">
-                <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields">読み込み中...</div>
-                <button type="button" class="btn-main" onclick="submitForm(this)">データを送信</button>
+                <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
-        </div>
-        <div id="success-message" class="container">
-            <h2>送信完了</h2>
-            <button onclick="location.reload()" class="btn-main" style="background:#888;">戻る</button>
         </div>
     </div>
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
             <h3>Face情報</h3>
-            <img id="face-viewer" src="" class="face-img" alt="顔写真読み込み中">
+            <img id="face-viewer" src="" style="width:100%; border-radius:8px; display:none;">
             <h3 style="margin-top:40px; color:#1a73e8;">参考動画</h3>
-            <iframe src="https://www.youtube.com/embed/4_bGkHOccg4" width="100%" height="250" frameborder="0" allowfullscreen></iframe>
+            <div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px;">
+                <iframe src="https://www.youtube.com/embed/4_bGkHOccg4" style="position:absolute; top:0; left:0; width:100%; height:100%;" frameborder="0" allowfullscreen></iframe>
+            </div>
         </div>
     </div>
 
     <script>
-        // ★最新のデプロイURL(/exec)を貼ってください★
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwLwIUGtbcxKSs63BnsH6xnTICaoE_MmMwre0S64Pbo7XrDvdMbssDN1dloLLmytI2U/exec";
-        let masterData = [];
+        // ★ここに最新のデプロイURL(/exec)を貼り付けてください★
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwPPqtlP_7iUldXHZwhdbR3tCQzS-TBNq2wxDf_twAZPuttb1buKZcdCjARo83PS3qX/exec";
 
         window.onload = () => {
-            fetch(GAS_URL + "?action=init").then(r => r.json()).then(res => {
-                masterData = res.lists;
-                if (res.imagesMap && res.imagesMap['ニックネーム']) {
-                    document.getElementById('face-viewer').src = res.imagesMap['ニックネーム'];
-                }
-                
-                const fieldsDiv = document.getElementById('fields');
-                fieldsDiv.innerHTML = '';
-                res.settings.forEach(item => {
-                    // 【復活】項目名に対応する画像があれば、ラベルの前に挿入する
-                    if (item.name !== 'ニックネーム' && res.imagesMap && res.imagesMap[item.name]) {
-                        const img = document.createElement('img');
-                        img.src = res.imagesMap[item.name];
-                        img.className = "face-img";
-                        fieldsDiv.appendChild(img);
-                    }
-
-                    const label = document.createElement('label');
-                    label.innerText = item.name;
-                    fieldsDiv.appendChild(label);
-
-                    let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
-                    if (item.type === 'select' || item.type.includes('master_')) {
-                        input = document.createElement('select');
-                        if (item.type.includes('master_')) {
-                            input.className = item.type.replace('master_','') + '-input';
-                            input.dataset.group = getGroup(item.name);
-                            input.onchange = (e) => updateCascading(e.target);
-                        } else {
-                            input.add(new Option("-- 選択 --", ""));
-                            item.options.forEach(o => input.add(new Option(o, o)));
-                        }
-                    } else {
-                        input.type = item.type;
-                    }
-                    input.name = item.name;
-
-                    // 【確認】文字数上限のセット
-                    if (item.maxLength) {
-                        input.maxLength = item.maxLength;
-                    }
-                    fieldsDiv.appendChild(input);
-
-                    // 【復活】文字数上限を赤字で表示
-                    if (item.maxLength) {
-                        const hint = document.createElement('div');
-                        hint.className = "char-hint";
-                        hint.innerText = "※最大 " + item.maxLength + " 文字まで入力可能です";
-                        fieldsDiv.appendChild(hint);
-                    }
-
-                    if (item.name.includes('計画書へ転記')) {
-                        input.classList.add('transcription-target');
-                        input.addEventListener('change', (e) => validateTranscription(e.target));
-                    }
-                });
-
-                // プルダウン初期化
-                document.querySelectorAll('.major-input').forEach(el => {
-                    const majors = [...new Set(masterData.map(r => r[0]))];
-                    el.add(new Option("-- 選択 --", ""));
-                    majors.forEach(m => el.add(new Option(m, m)));
-                });
-            });
+            fetch(GAS_URL + "?action=init").then(r => r.json()).then(render);
         };
 
-        // 検索・送信・タブ切り替え等のロジックは以前と同じ（省略せずに組み込んでいます）
-        function validateTranscription(target) {
-            const count = Array.from(document.querySelectorAll('.transcription-target')).filter(el => el.value && el.value !== "" && el.value !== "-- 選択 --").length;
-            if (count > 3) { alert("転記できるのは合計3つまでです。"); target.value = ""; }
-        }
+        function render(res) {
+            const fieldsDiv = document.getElementById('fields');
+            fieldsDiv.innerHTML = '';
+            
+            // Face画像のセット
+            if (res.imagesMap && res.imagesMap['ニックネーム']) {
+                const faceImg = document.getElementById('face-viewer');
+                faceImg.src = res.imagesMap['ニックネーム'];
+                faceImg.style.display = 'block';
+            }
 
-        function loadPrev(btn) {
-            const email = document.getElementById('search-email').value;
-            if(!email) return alert("メールを入力してください");
-            btn.innerText = "...";
-            fetch(GAS_URL + "?action=find&email=" + email).then(r => r.json()).then(res => {
-                btn.innerText = "読込";
-                if(res.error) return alert("データなし");
-                document.getElementById('rowNum').value = res.rowNum;
-                const form = document.getElementById('mainForm');
-                for (let key in res.data) {
-                    const el = document.getElementsByName(key)[0];
-                    if (el) { el.value = res.data[key]; if (el.onchange) el.onchange(); }
+            res.settings.forEach(item => {
+                if (!item.name || item.name === "項目名" || item.name === "ニックネーム") return;
+
+                const group = document.createElement('div');
+                group.className = 'field-group';
+
+                // 画像の表示
+                if (res.imagesMap && res.imagesMap[item.name]) {
+                    const img = document.createElement('img');
+                    img.src = res.imagesMap[item.name];
+                    group.appendChild(img);
                 }
-                alert("読み込み完了");
+
+                const lbl = document.createElement('label');
+                lbl.innerText = item.name;
+                group.appendChild(lbl);
+
+                let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
+                if (item.type === 'select') {
+                    input = document.createElement('select');
+                    input.add(new Option("-- 選択 --", ""));
+                    item.options.forEach(o => input.add(new Option(o, o)));
+                } else {
+                    input.type = item.type;
+                }
+                input.name = item.name;
+                if (item.maxLength) input.maxLength = item.maxLength;
+                group.appendChild(input);
+
+                // 文字数制限
+                if (item.maxLength) {
+                    const hint = document.createElement('span');
+                    hint.className = 'char-hint';
+                    hint.innerText = "※最大 " + item.maxLength + " 文字まで";
+                    group.appendChild(hint);
+                }
+
+                // カウンター
+                if (item.name.includes('計画書へ転記')) {
+                    input.classList.add('count-target');
+                    input.addEventListener('change', updateCount);
+                    const counter = document.createElement('div');
+                    counter.className = 'counter';
+                    counter.innerText = "0 / 3 選択済み";
+                    group.appendChild(counter);
+                }
+
+                fieldsDiv.appendChild(group);
             });
         }
 
-        function submitForm(btn) {
-            btn.disabled = true;
-            btn.innerText = "送信中...";
-            const data = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-            fetch(GAS_URL, { method: "POST", body: JSON.stringify(data) }).then(() => {
-                document.getElementById('form-container').style.display = 'none';
-                document.getElementById('success-message').style.display = 'block';
-                window.scrollTo(0,0);
-            });
+        function updateCount() {
+            const targets = Array.from(document.querySelectorAll('.count-target'));
+            const count = targets.filter(t => t.value !== "").length;
+            document.querySelectorAll('.counter').forEach(c => c.innerText = count + " / 3 選択済み");
+            if (count > 3) alert("3つまでにしてください");
         }
 
         function switchTab(id, btn) {
@@ -387,27 +129,19 @@
             btn.classList.add('active');
         }
 
-        function getGroup(name) {
-            const m = name.match(/(参加|活動|機能)(長期|短期)[１２３]/);
-            return m ? m[0] : 'default';
-        }
-
-        function updateCascading(target) {
-            const group = target.dataset.group;
-            const majVal = document.querySelector(`.major-input[data-group="${group}"]`).value;
-            const midEl = document.querySelector(`.middle-input[data-group="${group}"]`);
-            const minEl = document.querySelector(`.minor-input[data-group="${group}"]`);
-            if (target.classList.contains('major-input')) {
-                if(midEl) {
-                    midEl.innerHTML = '<option>-- 選択 --</option>';
-                    [...new Set(masterData.filter(r => r[0] === majVal).map(r => r[1]))].forEach(x => midEl.add(new Option(x, x)));
-                }
-            } else if (target.classList.contains('middle-input')) {
-                if(minEl) {
-                    minEl.innerHTML = '<option>-- 選択 --</option>';
-                    masterData.filter(r => r[0] === majVal && r[1] === target.value).forEach(r => minEl.add(new Option(r[2], r[2])));
-                }
-            }
+        function sendData() {
+            const btn = document.querySelector('.btn-send');
+            btn.disabled = true;
+            btn.innerText = "送信中...";
+            const formData = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
+            
+            fetch(GAS_URL, {
+                method: "POST",
+                body: JSON.stringify(formData)
+            }).then(() => {
+                alert("送信が完了しました");
+                location.reload();
+            });
         }
     </script>
 </body>
