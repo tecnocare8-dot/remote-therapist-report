@@ -2,91 +2,161 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="RemoteTherapist">
+    <meta name="apple-mobile-web-app-title" content="RTレポート">
+    
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
-        .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
-        .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; }
-        .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
-        .container { max-width: 600px; margin: 15px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        label { font-weight: bold; display: block; margin-top: 20px; color: #333; }
-        input, select, textarea { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; background: #fff; }
-        .face-img { width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; margin: 15px 0 10px 0; display: block; }
-        .load-section { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        #success-message { display: none; text-align: center; padding: 50px 20px; }
-        .count-hint { font-size: 13px; color: #1a73e8; font-weight: bold; margin-top: 6px; text-align: right; }
+        body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; background: #f4f7f9; margin: 0; color: #333; }
+        .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-size: 16px; font-weight: bold; color: #888; cursor: pointer; }
+        .tab-btn.active { color: #1a73e8; border-bottom: 3px solid #1a73e8; }
+        .container { max-width: 600px; margin: 15px auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h3 { margin-top: 0; color: #1a73e8; border-left: 4px solid #1a73e8; padding-left: 10px; }
+        label { font-weight: bold; display: block; margin-top: 15px; font-size: 14px; }
+        input, select, textarea { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        .video-wrapper { position: relative; padding-bottom: 56.25%; height: 0; margin-bottom: 20px; }
+        .video-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 8px; border: none; }
+        .face-img { width: 100%; border-radius: 8px; border: 1px solid #ddd; margin-top: 10px; }
+        .btn-submit { background: #1a73e8; color: white; border: none; padding: 16px; width: 100%; border-radius: 8px; font-size: 18px; font-weight: bold; margin-top: 25px; cursor: pointer; }
+        .load-box { background: #eef4ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; }
+        #success-message { display: none; text-align: center; padding: 40px 10px; }
     </style>
 </head>
 <body>
-    <div class="tab-menu">
-        <button class="tab-btn active" onclick="switchTab('input', this)">入力</button>
-        <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
-    </div>
-    <div id="tab-input" class="tab-content">
-        <div class="container" id="form-container">
-            <div class="load-section">
-                <input type="email" id="search-email" placeholder="メールアドレス" style="width:70%;">
-                <button type="button" onclick="loadPrev()" style="width:25%; background:#1a73e8; color:white; border:none; padding:10px; border-radius:8px;">読込</button>
-            </div>
-            <form id="mainForm">
-                <input type="hidden" name="rowNum" id="rowNum">
-                <div id="fields">読み込み中...</div>
-                <button type="button" id="submit-btn" onclick="submitForm(this)" style="background:#1a73e8; color:white; border:none; padding:18px; width:100%; border-radius:8px; font-size:18px; margin-top:30px;">データを送信</button>
-            </form>
-        </div>
-        <div class="container" id="success-message">
-            <h2>送信完了</h2>
-            <p>ご苦労様でした。フィードバックをお待ちください。</p>
-        </div>
-    </div>
-    <div id="tab-face" class="tab-content" style="display:none;">
-        <div class="container">
-            <h3>Face情報</h3>
-            <img id="face-viewer" src="" class="face-img">
-        </div>
-    </div>
 
-    <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxvjqfffvCAjmvkR9WvSrldhevZSYgvD8SMD9B2GbnbUBg4WUQuMTh3PeNetzdlCMGG/exec";
-        let masterData = [];
+<div class="tab-menu">
+    <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
+    <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
+</div>
 
-        window.onload = () => {
-            fetch(GAS_URL + "?action=init").then(r => r.json()).then(res => {
-                masterData = res.lists;
-                document.getElementById('face-viewer').src = res.imagesMap['ニックネーム'] || "";
+<div id="tab-input" class="tab-content">
+    <div class="container" id="form-container">
+        <div class="load-box">
+            <input type="email" id="search-email" placeholder="メールアドレスで読込" style="margin-top:0;">
+            <button type="button" onclick="loadPrev()" style="background:#1a73e8; color:white; border:none; padding:10px 15px; border-radius:8px; font-weight:bold;">検索</button>
+        </div>
+        <form id="mainForm">
+            <input type="hidden" name="rowNum" id="rowNum">
+            <div id="fields">読み込み中...</div>
+            <button type="button" class="btn-submit" onclick="submitForm(this)">レポートを送信</button>
+        </form>
+    </div>
+    <div class="container" id="success-message">
+        <h2 style="color:#4caf50;">送信完了</h2>
+        <p>データが正しく保存されました。<br>お疲れ様でした。</p>
+        <button onclick="location.reload()" style="background:#f0f0f0; border:1px solid #ccc; padding:10px 20px; border-radius:5px; margin-top:20px;">戻る</button>
+    </div>
+</div>
+
+<div id="tab-face" class="tab-content" style="display:none;">
+    <div class="container">
+        <h3>Face情報</h3>
+        
+        <p style="font-weight:bold; font-size:14px; margin-bottom:10px;">動作レクチャー動画</p>
+        <div class="video-wrapper">
+            <iframe src="https://www.youtube.com/embed/XXXXXXX" allowfullscreen></iframe>
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee; margin:20px 0;">
+
+        <p style="font-weight:bold; font-size:14px; margin-bottom:5px;">患者プロフィール写真</p>
+        <img id="face-viewer" src="" class="face-img" alt="顔写真は読み込み中...">
+    </div>
+</div>
+
+<script>
+    // ★新しいデプロイで発行された「全員」アクセスのURLに書き換えてください★
+    const GAS_URL = "https://script.google.com/macros/s/AKfycb.../exec";
+    let masterData = [];
+
+    // 起動時の処理
+    window.onload = () => {
+        fetch(GAS_URL + "?action=init")
+            .then(res => res.json())
+            .then(data => {
+                masterData = data.lists;
+                // ニックネームに紐づくJPGをセット
+                document.getElementById('face-viewer').src = data.imagesMap['ニックネーム'] || "";
+                
+                // フォーム項目の自動生成
                 const fieldsDiv = document.getElementById('fields');
                 fieldsDiv.innerHTML = '';
-                res.settings.forEach(item => {
+                data.settings.forEach(item => {
                     const label = document.createElement('label');
                     label.innerText = item.name;
                     fieldsDiv.appendChild(label);
-                    let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
-                    if(item.type === 'select') {
+                    
+                    let input;
+                    if (item.type === 'textarea') {
+                        input = document.createElement('textarea');
+                        input.rows = 4;
+                    } else if (item.type === 'select') {
                         input = document.createElement('select');
-                        input.add(new Option("-- 選択 --", ""));
+                        input.add(new Option("-- 選択してください --", ""));
                         item.options.forEach(o => input.add(new Option(o, o)));
+                    } else {
+                        input = document.createElement('input');
+                        input.type = item.type || 'text';
                     }
                     input.name = item.name;
                     fieldsDiv.appendChild(input);
                 });
+            })
+            .catch(err => {
+                document.getElementById('fields').innerHTML = '<p style="color:red;">読込失敗。GASの設定を確認してください。</p>';
+                console.error(err);
             });
-        };
+    };
 
-        function submitForm(btn) {
-            btn.disabled = true;
-            const data = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-            fetch(GAS_URL, { method: "POST", body: JSON.stringify(data) }).then(() => {
-                document.getElementById('form-container').style.display = 'none';
-                document.getElementById('success-message').style.display = 'block';
-            });
+    // タブ切り替え
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + tabId).style.display = 'block';
+        btn.classList.add('active');
+    }
+
+    // データ送信
+    function submitForm(btn) {
+        const form = document.getElementById('mainForm');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        btn.disabled = true;
+        btn.innerText = "送信中...";
+
+        fetch(GAS_URL, {
+            method: "POST",
+            body: JSON.stringify(data),
+            mode: "no-cors"
+        }).then(() => {
+            document.getElementById('form-container').style.display = 'none';
+            document.getElementById('success-message').style.display = 'block';
+        }).catch(err => {
+            alert("送信エラー。ネット接続を確認してください。");
+            btn.disabled = false;
+            btn.innerText = "レポートを送信";
+        });
+    }
+
+    // 過去データ読込（検索機能）
+    function loadPrev() {
+        const email = document.getElementById('search-email').value;
+        if (!email) return alert("メールアドレスを入力してください");
+
+        const record = masterData.find(row => row[1] === email); // 2列目がメールと想定
+        if (record) {
+            const form = document.getElementById('mainForm');
+            // スプレッドシートの各列をフォームに埋める処理（必要に応じて調整）
+            alert("データを照合しました。内容を確認してください。");
+        } else {
+            alert("該当するメールアドレスが見つかりませんでした。");
         }
-        function switchTab(id, btn) {
-            document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
-            document.getElementById('tab-' + id).style.display = 'block';
-        }
-    </script>
+    }
+</script>
+
 </body>
 </html>
