@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
@@ -9,14 +9,17 @@
         .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
+        
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; background: #eee; min-height: 50px; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; -webkit-appearance: none; }
+        
         .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; margin-top: 20px; }
+        #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
     </style>
 </head>
 <body>
@@ -27,8 +30,9 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <form id="mainForm">
-                <div id="fields">読み込み中...</div>
+            <div id="loading">データを読み込み中...</div>
+            <form id="mainForm" style="display:none;">
+                <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
         </div>
@@ -47,17 +51,29 @@
 
     <script>
         // ★ここに最新のデプロイURL(/exec)を貼り付けてください★
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwPPqtlP_7iUldXHZwhdbR3tCQzS-TBNq2wxDf_twAZPuttb1buKZcdCjARo83PS3qX/exec";
+        const GAS_URL = "ここにデプロイURLを貼る";
 
         window.onload = () => {
-            fetch(GAS_URL + "?action=init").then(r => r.json()).then(render);
+            fetch(GAS_URL + "?action=init")
+                .then(response => {
+                    if (!response.ok) throw new Error('通信エラー');
+                    return response.json();
+                })
+                .then(res => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('mainForm').style.display = 'block';
+                    render(res);
+                })
+                .catch(err => {
+                    document.getElementById('loading').innerText = "エラー: データの読み込みに失敗しました。再試行してください。";
+                    console.error(err);
+                });
         };
 
         function render(res) {
             const fieldsDiv = document.getElementById('fields');
             fieldsDiv.innerHTML = '';
             
-            // Face画像のセット
             if (res.imagesMap && res.imagesMap['ニックネーム']) {
                 const faceImg = document.getElementById('face-viewer');
                 faceImg.src = res.imagesMap['ニックネーム'];
@@ -70,7 +86,7 @@
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                // 画像の表示
+                // 図の表示
                 if (res.imagesMap && res.imagesMap[item.name]) {
                     const img = document.createElement('img');
                     img.src = res.imagesMap[item.name];
@@ -81,19 +97,24 @@
                 lbl.innerText = item.name;
                 group.appendChild(lbl);
 
-                let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
-                if (item.type === 'select') {
+                let input;
+                if (item.type === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.rows = 4;
+                } else if (item.type === 'select' || item.options.length > 0) {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
-                    item.options.forEach(o => input.add(new Option(o, o)));
+                    item.options.forEach(opt => input.add(new Option(opt, opt)));
                 } else {
-                    input.type = item.type;
+                    input = document.createElement('input');
+                    input.type = item.type || 'text';
                 }
+                
                 input.name = item.name;
                 if (item.maxLength) input.maxLength = item.maxLength;
                 group.appendChild(input);
 
-                // 文字数制限
+                // 上限文字数の表示
                 if (item.maxLength) {
                     const hint = document.createElement('span');
                     hint.className = 'char-hint';
@@ -101,7 +122,7 @@
                     group.appendChild(hint);
                 }
 
-                // カウンター
+                // 選択数カウンター
                 if (item.name.includes('計画書へ転記')) {
                     input.classList.add('count-target');
                     input.addEventListener('change', updateCount);
@@ -119,7 +140,7 @@
             const targets = Array.from(document.querySelectorAll('.count-target'));
             const count = targets.filter(t => t.value !== "").length;
             document.querySelectorAll('.counter').forEach(c => c.innerText = count + " / 3 選択済み");
-            if (count > 3) alert("3つまでにしてください");
+            if (count > 3) alert("計画書への転記は3つまでにしてください");
         }
 
         function switchTab(id, btn) {
@@ -137,10 +158,15 @@
             
             fetch(GAS_URL, {
                 method: "POST",
+                mode: "no-cors",
                 body: JSON.stringify(formData)
             }).then(() => {
                 alert("送信が完了しました");
                 location.reload();
+            }).catch(err => {
+                alert("送信エラーが発生しました");
+                btn.disabled = false;
+                btn.innerText = "報告を送信する";
             });
         }
     </script>
