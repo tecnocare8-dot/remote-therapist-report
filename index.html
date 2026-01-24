@@ -6,19 +6,20 @@
     <title>Remote Therapist®</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
+        /* タブのスタイル */
         .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; background: #eee; min-height: 50px; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; background: #f9f9f9; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; -webkit-appearance: none; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
         
         .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; }
-        .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; margin-top: 20px; }
+        .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
     </style>
 </head>
@@ -30,7 +31,7 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <div id="loading">データを読み込み中...</div>
+            <div id="loading">データを読込中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
@@ -42,38 +43,39 @@
         <div class="container">
             <h3>Face情報</h3>
             <img id="face-viewer" src="" style="width:100%; border-radius:8px; display:none;">
+            
             <h3 style="margin-top:40px; color:#1a73e8;">参考動画</h3>
             <div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px;">
-                <iframe src="https://www.youtube.com/embed/4_bGkHOccg4" style="position:absolute; top:0; left:0; width:100%; height:100%;" frameborder="0" allowfullscreen></iframe>
+                <iframe id="yt-video" src="https://www.youtube.com/embed/4_bGkHOccg4" style="position:absolute; top:0; left:0; width:100%; height:100%;" frameborder="0" allowfullscreen></iframe>
             </div>
         </div>
     </div>
 
     <script>
-        // ★ここに最新のデプロイURL(/exec)を貼り付けてください★
-        const GAS_URL = "ここにデプロイURLを貼る";
+        // ★ここに最新のGASデプロイURL(/exec)を貼り付けてください★
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbxZppFiDI5tpdoeCL3YicDB_7Qsj2zy23ZiSLrcdAATQTUiMh_ncQvU3_5qiZ5zw9A/exec";
 
         window.onload = () => {
-            fetch(GAS_URL + "?action=init")
-                .then(response => {
-                    if (!response.ok) throw new Error('通信エラー');
-                    return response.json();
-                })
-                .then(res => {
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('mainForm').style.display = 'block';
-                    render(res);
-                })
-                .catch(err => {
-                    document.getElementById('loading').innerText = "エラー: データの読み込みに失敗しました。再試行してください。";
-                    console.error(err);
-                });
+            fetch(GAS_URL + "?action=init", { 
+                method: "GET"
+            })
+            .then(res => res.json())
+            .then(res => {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainForm').style.display = 'block';
+                render(res);
+            })
+            .catch(err => {
+                console.error("Connection Error:", err);
+                document.getElementById('loading').innerHTML = "通信エラーが発生しました。<br>GASのデプロイURLが正しいか確認してください。";
+            });
         };
 
         function render(res) {
             const fieldsDiv = document.getElementById('fields');
             fieldsDiv.innerHTML = '';
             
+            // Face画像の表示設定
             if (res.imagesMap && res.imagesMap['ニックネーム']) {
                 const faceImg = document.getElementById('face-viewer');
                 faceImg.src = res.imagesMap['ニックネーム'];
@@ -86,7 +88,7 @@
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                // 図の表示
+                // 各項目の図を表示
                 if (res.imagesMap && res.imagesMap[item.name]) {
                     const img = document.createElement('img');
                     img.src = res.imagesMap[item.name];
@@ -101,7 +103,7 @@
                 if (item.type === 'textarea') {
                     input = document.createElement('textarea');
                     input.rows = 4;
-                } else if (item.type === 'select' || item.options.length > 0) {
+                } else if (item.type === 'select' || (item.options && item.options.length > 0)) {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
                     item.options.forEach(opt => input.add(new Option(opt, opt)));
@@ -122,7 +124,7 @@
                     group.appendChild(hint);
                 }
 
-                // 選択数カウンター
+                // 転記カウンターの設置
                 if (item.name.includes('計画書へ転記')) {
                     input.classList.add('count-target');
                     input.addEventListener('change', updateCount);
@@ -140,7 +142,7 @@
             const targets = Array.from(document.querySelectorAll('.count-target'));
             const count = targets.filter(t => t.value !== "").length;
             document.querySelectorAll('.counter').forEach(c => c.innerText = count + " / 3 選択済み");
-            if (count > 3) alert("計画書への転記は3つまでにしてください");
+            if (count > 3) alert("転記項目の選択は3つまでにしてください");
         }
 
         function switchTab(id, btn) {
@@ -161,10 +163,10 @@
                 mode: "no-cors",
                 body: JSON.stringify(formData)
             }).then(() => {
-                alert("送信が完了しました");
+                alert("報告を送信しました");
                 location.reload();
             }).catch(err => {
-                alert("送信エラーが発生しました");
+                alert("送信中にエラーが発生しました");
                 btn.disabled = false;
                 btn.innerText = "報告を送信する";
             });
