@@ -11,7 +11,7 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; background: #f9f9f9; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
         .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
@@ -48,19 +48,20 @@
     </div>
 
     <script>
-        // ★ここにGASの最新デプロイURL(/exec)を貼り付けてください★
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzNStpU7fS2-anLqBGNLKQ6uHxD_Frf-a579lxZpYXgIc5qoPyq1Jfc799Tpoiww1AA/exec";
+        // ★ここに最新のデプロイURL(/exec)を貼る★
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyVXqSkdzJtwlfWF6Ub5ppaIK4obb7wuCOjsfuIE9lOQfUeAHniuXG7tajMrPJk-jvi/exec";
 
         window.onload = () => {
-            fetch(GAS_URL + "?action=init")
-                .then(res => res.json())
+            // redirectを追従する設定でfetch
+            fetch(GAS_URL + "?action=init", { redirect: "follow" })
+                .then(r => r.json())
                 .then(res => {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
                     render(res);
                 })
                 .catch(err => {
-                    document.getElementById('loading').innerText = "通信エラー: デプロイ設定が「全員」になっているか確認してください。";
+                    document.getElementById('loading').innerText = "通信エラー: ページをリロードしてください。";
                 });
         };
 
@@ -68,21 +69,17 @@
             const fieldsDiv = document.getElementById('fields');
             fieldsDiv.innerHTML = '';
             
-            // Face画像
-            if (res.imagesMap && res.imagesMap['ニックネーム']) {
-                const faceImg = document.getElementById('face-viewer');
-                faceImg.src = res.imagesMap['ニックネーム'];
-                faceImg.style.display = 'block';
+            if (res.imagesMap['ニックネーム']) {
+                const fv = document.getElementById('face-viewer');
+                fv.src = res.imagesMap['ニックネーム'];
+                fv.style.display = 'block';
             }
 
             res.settings.forEach(item => {
-                if (!item.name || item.name === "項目名" || item.name === "ニックネーム") return;
-
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                // 図の表示
-                if (res.imagesMap && res.imagesMap[item.name]) {
+                if (res.imagesMap[item.name]) {
                     const img = document.createElement('img');
                     img.src = res.imagesMap[item.name];
                     group.appendChild(img);
@@ -92,24 +89,18 @@
                 lbl.innerText = item.name;
                 group.appendChild(lbl);
 
-                let input;
-                if (item.type === 'textarea') {
-                    input = document.createElement('textarea');
-                    input.rows = 4;
-                } else if (item.type === 'select' || (item.options && item.options.length > 0)) {
+                let input = document.createElement(item.type === 'textarea' ? 'textarea' : 'input');
+                if (item.type === 'select') {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
-                    item.options.forEach(opt => input.add(new Option(opt, opt)));
+                    item.options.forEach(o => input.add(new Option(o, o)));
                 } else {
-                    input = document.createElement('input');
-                    input.type = item.type || 'text';
+                    input.type = item.type;
                 }
-                
                 input.name = item.name;
                 if (item.maxLength) input.maxLength = item.maxLength;
                 group.appendChild(input);
 
-                // 上限文字数の表示
                 if (item.maxLength) {
                     const hint = document.createElement('span');
                     hint.className = 'char-hint';
@@ -117,10 +108,9 @@
                     group.appendChild(hint);
                 }
 
-                // カウンター
                 if (item.name.includes('計画書へ転記')) {
                     input.classList.add('count-target');
-                    input.addEventListener('change', updateCount);
+                    input.onchange = updateCount;
                     const counter = document.createElement('div');
                     counter.className = 'counter';
                     counter.innerText = "0 / 3 選択済み";
@@ -148,13 +138,8 @@
             btn.disabled = true;
             btn.innerText = "送信中...";
             const formData = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-            
-            fetch(GAS_URL, {
-                method: "POST",
-                mode: "no-cors",
-                body: JSON.stringify(formData)
-            }).then(() => {
-                alert("報告を送信しました");
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) }).then(() => {
+                alert("送信完了しました");
                 location.reload();
             });
         }
