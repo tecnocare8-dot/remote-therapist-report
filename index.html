@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Remote Therapist®</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
         .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
@@ -49,7 +50,8 @@
     </div>
 
     <script>
-        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbzXEe_3aaNNXm968qQYIsmoHL1ifENUnXHFN8D9HDhopV5sGO92-ZdL9ltOIhxG84RK/exec";
+        // ★重要：GitHub時はGASの最新デプロイURLをここに貼り付ける
+        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbzniQYF5t2dustp8qqkRZHgFoeflmDJkf89E1jCbD1zHqyBQPfRdvQVbXUZVo4_nevX/exec";
         let masterLists = [];
 
         window.onload = () => {
@@ -72,6 +74,7 @@
                 let name = row[0], type = String(row[1]).trim(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
                 if (!name || name === "項目名") return;
 
+                // ニックネームをFace情報タブへ
                 if (name === "ニックネーム") {
                     if (imgUrl) { const img = document.createElement('img'); img.src = getThumb(imgUrl); faceArea.appendChild(img); }
                     return;
@@ -83,17 +86,18 @@
                 const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
 
                 let input;
-                // 原則：master_major, master_middle, master_minor の判定
-                if (type.includes('master_')) {
+                // ★修正：半角アンダーバー "_ICF" を基準に三段連動を構築
+                if (name.includes('_ICF')) {
                     input = document.createElement('select'); input.name = name;
-                    // グループキー（参加長期 1 など）を抽出
-                    input.dataset.group = name.split('__')[0].trim();
-                    input.dataset.lv = type.replace('master_', ''); // major, middle, or minor
+                    input.dataset.group = name.split('_ICF')[0].trim(); // 「参加長期１」など
+                    if (name.includes('大')) input.dataset.lv = 'major';
+                    else if (name.includes('中')) input.dataset.lv = 'middle';
+                    else if (name.includes('小')) input.dataset.lv = 'minor';
                     input.onchange = (e) => syncICF(e.target);
-                    input.classList.add('master-select');
+                    input.classList.add('icf-sync');
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
-                } else if (type === 'select' || options.length > 0) {
+                } else if (type === 'select' || (type !== 'text' && type !== 'email' && options.length > 0)) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 } else {
@@ -113,7 +117,6 @@
         }
 
         function initICF() {
-            // masterLists の A列 (index 0) から大項目を抽出
             const majors = [...new Set(masterLists.map(r => r[0]))].filter(v => v);
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 選択 --</option>';
@@ -123,23 +126,21 @@
 
         function syncICF(target) {
             const g = target.dataset.group, lv = target.dataset.lv;
-            const majorVal = document.querySelector(`select[data-group="${g}"][data-lv="major"]`).value;
+            const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
             if (lv === 'major' && middleEl) {
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-                // A列(Major)が一致するB列(Middle)を抽出
-                const filtered = [...new Set(masterLists.filter(r => r[0] === majorVal).map(r => r[1]))].filter(v => v);
+                const filtered = [...new Set(masterLists.filter(r => r[0] === majorEl.value).map(r => r[1]))].filter(v => v);
                 filtered.forEach(v => middleEl.add(new Option(v, v)));
                 if(minorEl) {
                     minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                    syncICF(middleEl); // 小項目も連動してリセット
+                    syncICF(middleEl); // 連鎖的にリセット
                 }
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                // A列(Major)かつB列(Middle)が一致するC列(Minor)を抽出
-                masterLists.filter(r => r[0] === majorVal && r[1] === target.value).forEach(r => {
+                masterLists.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
                     if(r[2]) minorEl.add(new Option(r[2], r[2]));
                 });
             }
@@ -147,7 +148,7 @@
 
         function searchData() {
             const email = document.getElementById('search-email').value;
-            if (!email) return alert("メールアドレスを入力してください");
+            if (!email) return alert("アドレスを入力してください");
             fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email), { redirect: "follow" })
                 .then(r => r.json()).then(res => {
                     if (res.error === "なし") return alert("過去データなし");
@@ -156,7 +157,6 @@
                         const els = document.getElementsByName(key);
                         if (els.length > 0) { 
                             els[0].value = res.data[key]; 
-                            // 選択項目（連動含む）の場合はイベントを強制発火
                             if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change')); 
                         }
                     }
@@ -184,4 +184,4 @@
         }
     </script>
 </body>
-</html>ｖ
+</html>
