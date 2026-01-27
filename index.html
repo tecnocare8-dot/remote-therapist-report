@@ -16,6 +16,7 @@
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
     </style>
@@ -42,27 +43,23 @@
         </div>
     </div>
 
-    <div id="tab-face" class="tab-content" style="display:none;">
-        <div class="container">
-            <h3>Face情報</h3>
-            <div id="face-img-area"></div>
-        </div>
-    </div>
+    <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><h3>Face情報</h3><div id="face-img-area"></div></div></div>
 
     <script>
-        // ★重要：GitHub時はGASの最新デプロイURLをここに貼り付ける
-        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbzniQYF5t2dustp8qqkRZHgFoeflmDJkf89E1jCbD1zHqyBQPfRdvQVbXUZVo4_nevX/exec";
+        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbw3qOUIRwOQjLA3Kk9Vr-T2jEErqk83X5FuR0c7iv9x6hgVH6QtRhr6jDSR0tSdRpHp/exec";
         let masterLists = [];
+        let functionLists = [];
 
         window.onload = () => {
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
                     masterLists = res.lists;
+                    functionLists = res.functionLists;
                     render(res.config);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
-                }).catch(err => { alert("通信エラー: デプロイを確認してください"); });
+                }).catch(err => alert("通信エラー"));
         };
 
         function render(config) {
@@ -75,24 +72,21 @@
                 if (!name || name === "項目名") return;
 
                 // ニックネームをFace情報タブへ
-                if (name === "ニックネーム") {
-                    if (imgUrl) { const img = document.createElement('img'); img.src = getThumb(imgUrl); faceArea.appendChild(img); }
-                    return;
+                if (name === "ニックネーム" && imgUrl) {
+                    const img = document.createElement('img'); img.src = getThumb(imgUrl); faceArea.appendChild(img);
                 }
 
                 const group = document.createElement('div'); group.className = 'field-group';
                 if (imgUrl) { const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img); }
-
                 const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
 
                 let input;
-                // ★修正：半角アンダーバー "_ICF" を基準に三段連動を構築
-                if (name.includes('_ICF')) {
+                // ★修正：型定義（B列）を最優先。master_ か function_ かを判定
+                if (type.includes('master_') || type.includes('function_')) {
                     input = document.createElement('select'); input.name = name;
-                    input.dataset.group = name.split('_ICF')[0].trim(); // 「参加長期１」など
-                    if (name.includes('大')) input.dataset.lv = 'major';
-                    else if (name.includes('中')) input.dataset.lv = 'middle';
-                    else if (name.includes('小')) input.dataset.lv = 'minor';
+                    input.dataset.group = name.split('_')[0].trim();
+                    input.dataset.type = type; // 型（function_major等）を保存
+                    input.dataset.lv = type.replace('master_', '').replace('function_', ''); 
                     input.onchange = (e) => syncICF(e.target);
                     input.classList.add('icf-sync');
                 } else if (type === 'textarea') {
@@ -104,9 +98,13 @@
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
                 
-                input.name = name; 
-                if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
+                input.name = name; if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
                 group.appendChild(input);
+
+                if (name.includes('計画書へ転記')) {
+                    input.classList.add('count-target'); input.addEventListener('change', updateCount);
+                    const cDiv = document.createElement('div'); cDiv.className = 'counter'; cDiv.innerText = "0 / 3 選択済み"; group.appendChild(cDiv);
+                }
 
                 if (maxLen && !isNaN(maxLen)) {
                     const hint = document.createElement('span'); hint.className = 'char-hint'; hint.innerText = "※最大 " + maxLen + " 文字まで"; group.appendChild(hint);
@@ -117,55 +115,61 @@
         }
 
         function initICF() {
-            const majors = [...new Set(masterLists.map(r => r[0]))].filter(v => v);
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 選択 --</option>';
+                // ★判定：型定義に基づいて使用するリストを選択
+                const currentList = el.dataset.type.includes('function_') ? functionLists : masterLists;
+                const majors = [...new Set(currentList.map(r => r[0]))].filter(v => v);
                 majors.forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
-            const g = target.dataset.group, lv = target.dataset.lv;
+            const g = target.dataset.group, lv = target.dataset.lv, type = target.dataset.type;
+            const currentList = type.includes('function_') ? functionLists : masterLists;
+
             const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
             if (lv === 'major' && middleEl) {
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = [...new Set(masterLists.filter(r => r[0] === majorEl.value).map(r => r[1]))].filter(v => v);
+                const filtered = [...new Set(currentList.filter(r => r[0] === majorEl.value).map(r => r[1]))].filter(v => v);
                 filtered.forEach(v => middleEl.add(new Option(v, v)));
-                if(minorEl) {
-                    minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                    syncICF(middleEl); // 連鎖的にリセット
-                }
+                if(minorEl) { minorEl.innerHTML = '<option value="">-- 選択 --</option>'; syncICF(middleEl); }
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                masterLists.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
+                currentList.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
                     if(r[2]) minorEl.add(new Option(r[2], r[2]));
                 });
             }
         }
 
+        function updateCount() {
+            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
+            document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
+            if (count > 3) alert("計画書への転記は3つまでです。");
+        }
+
         function searchData() {
             const email = document.getElementById('search-email').value;
-            if (!email) return alert("アドレスを入力してください");
-            fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email), { redirect: "follow" })
-                .then(r => r.json()).then(res => {
-                    if (res.error === "なし") return alert("過去データなし");
-                    document.getElementById('rowNum').value = res.rowNum;
-                    for (let key in res.data) {
-                        const els = document.getElementsByName(key);
-                        if (els.length > 0) { 
-                            els[0].value = res.data[key]; 
-                            if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change')); 
-                        }
+            if (!email) return alert("アドレスを入力");
+            fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email)).then(r => r.json()).then(res => {
+                if (res.error === "なし") return alert("過去データなし");
+                document.getElementById('rowNum').value = res.rowNum;
+                for (let key in res.data) {
+                    const els = document.getElementsByName(key);
+                    if (els.length > 0) { 
+                        els[0].value = res.data[key]; 
+                        if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change')); 
                     }
-                    alert("読込完了");
-                });
+                }
+                updateCount(); alert("読込完了");
+            });
         }
 
         function getThumb(url) {
-            let id = url.includes("/d/") ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
+            let id = (url.includes("/d/")) ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
             return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
         }
 
@@ -178,9 +182,7 @@
         function sendData() {
             const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
             const formData = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) }).then(() => {
-                alert("送信完了"); location.reload();
-            });
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) }).then(() => { alert("送信完了"); location.reload(); });
         }
     </script>
 </body>
