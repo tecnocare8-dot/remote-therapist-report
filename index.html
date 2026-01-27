@@ -28,7 +28,7 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <div id="loading">データを取得中...</div>
+            <div id="loading">データを読込中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
@@ -48,101 +48,92 @@
     </div>
 
     <script>
-        // 指定いただいたデプロイURL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyVXqSkdzJtwlfWF6Ub5ppaIK4obb7wuCOjsfuIE9lOQfUeAHniuXG7tajMrPJk-jvi/exec";
         let masterData = [];
 
         window.onload = () => {
-            // redirect: follow を強制し、CORSを回避する
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
                     masterData = res.lists;
-                    render(res.config);
+                    render(res);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
                 })
                 .catch(err => {
-                    document.getElementById('loading').innerText = "通信エラー: GAS側の設定を確認してください。";
+                    document.getElementById('loading').innerText = "通信エラーが発生しました。";
                     console.error(err);
                 });
         };
 
-        function render(config) {
+        function render(res) {
             const fieldsDiv = document.getElementById('fields');
             const faceArea = document.getElementById('face-image-area');
             fieldsDiv.innerHTML = '';
             
-            config.forEach(row => {
-                let name = row[0];
-                let type = String(row[1]).toLowerCase();
-                let options = row[2] ? String(row[2]).split(',') : [];
-                let maxLen = row[3];
-                let imgUrl = row[4];
+            // 1. Face画像の処理
+            if (res.imagesMap && res.imagesMap['ニックネーム']) {
+                document.getElementById('face-title').style.display = 'block';
+                const fimg = document.createElement('img');
+                fimg.src = res.imagesMap['ニックネーム'];
+                faceArea.appendChild(fimg);
+            }
 
-                if (!name || name === "項目名") return;
-
-                // Face情報タブ（ニックネーム画像）の処理
-                if (name === "ニックネーム") {
-                    if (imgUrl) {
-                        document.getElementById('face-title').style.display = 'block';
-                        const fimg = document.createElement('img');
-                        fimg.src = getThumbnailUrl(imgUrl);
-                        faceArea.appendChild(fimg);
-                    }
-                    return;
-                }
+            // 2. 報告入力項目の生成（res.settingsをループ）
+            res.settings.forEach(item => {
+                if (!item.name || item.name === "ニックネーム") return;
 
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                if (imgUrl) {
+                // 図の表示
+                if (res.imagesMap && res.imagesMap[item.name]) {
                     const img = document.createElement('img');
-                    img.src = getThumbnailUrl(imgUrl);
+                    img.src = res.imagesMap[item.name];
                     group.appendChild(img);
                 }
 
                 const lbl = document.createElement('label');
-                lbl.innerText = name;
+                lbl.innerText = item.name;
                 group.appendChild(lbl);
 
                 let input;
-                // ICF連動項目の判定
-                if (name.includes('__ICF')) {
+                // 連動選択の判定
+                if (item.name.includes('__ICF')) {
                     input = document.createElement('select');
-                    input.name = name;
-                    // グループ名（例：参加長期1）を抽出
-                    input.dataset.group = name.split('__')[0].trim();
-                    if (name.includes('ICF大')) input.dataset.level = 'major';
-                    if (name.includes('ICF中')) input.dataset.level = 'middle';
-                    if (name.includes('ICF小')) input.dataset.level = 'minor';
+                    input.name = item.name;
+                    input.dataset.group = item.name.split('__')[0].trim();
+                    if (item.name.includes('大')) input.dataset.level = 'major';
+                    if (item.name.includes('中')) input.dataset.level = 'middle';
+                    if (item.name.includes('小')) input.dataset.level = 'minor';
                     input.onchange = (e) => syncICF(e.target);
-                } else if (type === 'textarea') {
+                    input.classList.add('master-select');
+                } else if (item.type === 'textarea') {
                     input = document.createElement('textarea');
                     input.rows = 4;
-                } else if (type === 'select' || options.length > 0) {
+                } else if (item.type === 'select' || (item.options && item.options.length > 0)) {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
-                    options.forEach(opt => input.add(new Option(opt.trim(), opt.trim())));
+                    item.options.forEach(o => input.add(new Option(o.trim(), o.trim())));
                 } else {
                     input = document.createElement('input');
-                    input.type = type || 'text';
+                    input.type = item.type || 'text';
                 }
                 
-                input.name = name;
-                if (maxLen) input.maxLength = maxLen;
+                input.name = item.name;
+                if (item.maxLength) input.maxLength = item.maxLength;
                 group.appendChild(input);
 
-                if (maxLen && !isNaN(maxLen)) {
+                if (item.maxLength) {
                     const hint = document.createElement('span');
                     hint.className = 'char-hint';
-                    hint.innerText = "※最大 " + maxLen + " 文字まで";
+                    hint.innerText = "※最大 " + item.maxLength + " 文字まで";
                     group.appendChild(hint);
                 }
 
-                if (name.includes('計画書へ転記')) {
+                if (item.name.includes('計画書へ転記')) {
                     input.classList.add('count-target');
-                    input.addEventListener('change', updateCount);
+                    input.onchange = updateCount;
                     const counter = document.createElement('div');
                     counter.className = 'counter';
                     counter.innerText = "0 / 3 選択済み";
@@ -153,16 +144,14 @@
             initICFMajors();
         }
 
-        // 大項目の初期リスト作成
         function initICFMajors() {
             const majors = [...new Set(masterData.map(r => r[0]))];
             document.querySelectorAll('select[data-level="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 大項目を選択 --</option>';
-                majors.forEach(m => el.add(new Option(m, m)));
+                majors.forEach(m => { if(m) el.add(new Option(m, m)); });
             });
         }
 
-        // ICF連動ロジック
         function syncICF(target) {
             const group = target.dataset.group;
             const level = target.dataset.level;
@@ -171,22 +160,19 @@
             const minorEl = document.querySelector(`select[data-group="${group}"][data-level="minor"]`);
 
             if (level === 'major') {
-                middleEl.innerHTML = '<option value="">-- 中項目を選択 --</option>';
-                const filtered = [...new Set(masterData.filter(r => r[0] === majorEl.value).map(r => r[1]))];
-                filtered.forEach(m => middleEl.add(new Option(m, m)));
-                syncICF(middleEl);
+                if (middleEl) {
+                    middleEl.innerHTML = '<option value="">-- 中項目を選択 --</option>';
+                    const filtered = [...new Set(masterData.filter(r => r[0] === majorEl.value).map(r => r[1]))];
+                    filtered.forEach(m => { if(m) middleEl.add(new Option(m, m)); });
+                    syncICF(middleEl);
+                }
             } else if (level === 'middle') {
-                minorEl.innerHTML = '<option value="">-- 小項目を選択 --</option>';
-                const filtered = masterData.filter(r => r[0] === majorEl.value && r[1] === middleEl.value);
-                filtered.forEach(r => minorEl.add(new Option(r[2], r[2])));
+                if (minorEl) {
+                    minorEl.innerHTML = '<option value="">-- 小項目を選択 --</option>';
+                    const filtered = masterData.filter(r => r[0] === majorEl.value && r[1] === middleEl.value);
+                    filtered.forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
+                }
             }
-        }
-
-        function getThumbnailUrl(rawUrl) {
-            let id = "";
-            if (rawUrl.includes("/d/")) id = rawUrl.split("/d/")[1].split("/")[0];
-            else if (rawUrl.includes("id=")) id = rawUrl.split("id=")[1].split("&")[0];
-            return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
         }
 
         function updateCount() {
