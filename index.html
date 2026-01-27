@@ -49,11 +49,13 @@
 
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyVXqSkdzJtwlfWF6Ub5ppaIK4obb7wuCOjsfuIE9lOQfUeAHniuXG7tajMrPJk-jvi/exec";
+        let masterData = [];
 
         window.onload = () => {
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
+                    masterData = res.lists; // マスターデータを保存
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
                     render(res);
@@ -69,7 +71,6 @@
             fieldsDiv.innerHTML = '';
             faceArea.innerHTML = '';
             
-            // 1. Face画像の処理（Face情報タブだけに表示）
             if (res.imagesMap && res.imagesMap['ニックネーム']) {
                 document.getElementById('face-title').style.display = 'block';
                 const fimg = document.createElement('img');
@@ -77,15 +78,12 @@
                 faceArea.appendChild(fimg);
             }
 
-            // 2. 報告入力項目の処理
             res.settings.forEach(item => {
                 if (!item.name || item.name === "項目名") return;
 
-                // ニックネーム項目は「入力欄」は表示するが「画像」はここでは出さない
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                // ★修正箇所：項目名が「ニックネーム」でない場合のみ、項目の上に画像を表示
                 if (item.name !== 'ニックネーム' && res.imagesMap && res.imagesMap[item.name]) {
                     const img = document.createElement('img');
                     img.src = res.imagesMap[item.name];
@@ -97,10 +95,19 @@
                 group.appendChild(lbl);
 
                 let input;
-                if (item.type === 'textarea') {
+                const type = item.type.toLowerCase();
+
+                // 連動項目の判定（大項目・中項目・小項目）
+                if (type.includes('master_') || item.name.match(/(大|中|小)項目/)) {
+                    input = document.createElement('select');
+                    input.name = item.name;
+                    input.dataset.type = type.replace('master_', ''); // major, middle, minor
+                    input.dataset.group = getItemGroup(item.name);
+                    input.onchange = (e) => handleMasterChange(e.target);
+                } else if (type === 'textarea') {
                     input = document.createElement('textarea');
                     input.rows = 4;
-                } else if (item.type === 'select' || (item.options && item.options.length > 0)) {
+                } else if (type === 'select' || (item.options && item.options.length > 0)) {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
                     item.options.forEach(o => input.add(new Option(o, o)));
@@ -131,6 +138,50 @@
 
                 fieldsDiv.appendChild(group);
             });
+            
+            initMasterSelects(); // 初期状態で大項目の選択肢を埋める
+        }
+
+        // 項目名からグループ（参加長期1など）を特定
+        function getItemGroup(name) {
+            const m = name.match(/(参加|活動|機能)(長期|短期)[１２３]/);
+            return m ? m[0] : 'default';
+        }
+
+        // 初期状態で大項目の選択肢をセット
+        function initMasterSelects() {
+            const majors = [...new Set(masterData.map(r => r[0]))];
+            document.querySelectorAll('select[dataset-type="major"], select[name*="大項目"]').forEach(el => {
+                el.innerHTML = '<option value="">-- 選択 --</option>';
+                majors.forEach(m => el.add(new Option(m, m)));
+                el.dataset.type = "major"; // 確実にセット
+            });
+            document.querySelectorAll('select[name*="中項目"]').forEach(el => el.dataset.type = "middle");
+            document.querySelectorAll('select[name*="小項目"]').forEach(el => el.dataset.type = "minor");
+        }
+
+        // 連動選択の制御
+        function handleMasterChange(target) {
+            const group = target.dataset.group;
+            const type = target.dataset.type;
+            const majorVal = document.querySelector(`select[data-group="${group}"][data-type="major"]`).value;
+            
+            if (type === 'major') {
+                const middleEl = document.querySelector(`select[data-group="${group}"][data-type="middle"]`);
+                if (middleEl) {
+                    middleEl.innerHTML = '<option value="">-- 選択 --</option>';
+                    const filtered = [...new Set(masterData.filter(r => r[0] === majorVal).map(r => r[1]))];
+                    filtered.forEach(m => middleEl.add(new Option(m, m)));
+                    handleMasterChange(middleEl); // 中項目をリセット
+                }
+            } else if (type === 'middle') {
+                const minorEl = document.querySelector(`select[data-group="${group}"][data-type="minor"]`);
+                if (minorEl) {
+                    minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+                    const filtered = masterData.filter(r => r[0] === majorVal && r[1] === target.value);
+                    filtered.forEach(r => minorEl.add(new Option(r[2], r[2])));
+                }
+            }
         }
 
         function updateCount() {
