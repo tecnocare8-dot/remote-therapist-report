@@ -55,10 +55,10 @@
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
-                    masterData = res.lists; // マスターデータを保存
+                    masterData = res.lists; 
+                    render(res);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
-                    render(res);
                 })
                 .catch(err => {
                     document.getElementById('loading').innerText = "エラー: データの取得に失敗しました。";
@@ -97,12 +97,19 @@
                 let input;
                 const type = item.type.toLowerCase();
 
-                // 連動項目の判定（大項目・中項目・小項目）
-                if (type.includes('master_') || item.name.match(/(大|中|小)項目/)) {
+                // ★連動選択項目の生成ロジック
+                if (item.name.match(/ICF(大|中|小)/)) {
                     input = document.createElement('select');
                     input.name = item.name;
-                    input.dataset.type = type.replace('master_', ''); // major, middle, minor
-                    input.dataset.group = getItemGroup(item.name);
+                    input.dataset.group = item.name.split('__')[0]; // 「参加長期1」などをグループ化
+                    
+                    if (item.name.includes('ICF大')) {
+                        input.dataset.type = 'major';
+                    } else if (item.name.includes('ICF中')) {
+                        input.dataset.type = 'middle';
+                    } else if (item.name.includes('ICF小')) {
+                        input.dataset.type = 'minor';
+                    }
                     input.onchange = (e) => handleMasterChange(e.target);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea');
@@ -135,55 +142,46 @@
                     counter.innerText = "0 / 3 選択済み";
                     group.appendChild(counter);
                 }
-
                 fieldsDiv.appendChild(group);
             });
             
-            initMasterSelects(); // 初期状態で大項目の選択肢を埋める
+            // ★レンダリング完了後に、大項目の選択肢を埋める
+            initMajors();
         }
 
-        // 項目名からグループ（参加長期1など）を特定
-        function getItemGroup(name) {
-            const m = name.match(/(参加|活動|機能)(長期|短期)[１２３]/);
-            return m ? m[0] : 'default';
-        }
-
-        // 初期状態で大項目の選択肢をセット
-        function initMasterSelects() {
+        function initMajors() {
             const majors = [...new Set(masterData.map(r => r[0]))];
-            document.querySelectorAll('select[dataset-type="major"], select[name*="大項目"]').forEach(el => {
-                el.innerHTML = '<option value="">-- 選択 --</option>';
+            document.querySelectorAll('select[data-type="major"]').forEach(el => {
+                el.innerHTML = '<option value="">-- 大項目を選択 --</option>';
                 majors.forEach(m => el.add(new Option(m, m)));
-                el.dataset.type = "major"; // 確実にセット
             });
-            document.querySelectorAll('select[name*="中項目"]').forEach(el => el.dataset.type = "middle");
-            document.querySelectorAll('select[name*="小項目"]').forEach(el => el.dataset.type = "minor");
         }
 
-        // 連動選択の制御
         function handleMasterChange(target) {
             const group = target.dataset.group;
             const type = target.dataset.type;
-            const majorVal = document.querySelector(`select[data-group="${group}"][data-type="major"]`).value;
-            
+            const majorVal = document.querySelector(`select[name="${group} __ICF大"]`).value;
+
             if (type === 'major') {
-                const middleEl = document.querySelector(`select[data-group="${group}"][data-type="middle"]`);
+                const middleEl = document.querySelector(`select[name="${group} __ICF中"]`);
                 if (middleEl) {
-                    middleEl.innerHTML = '<option value="">-- 選択 --</option>';
+                    middleEl.innerHTML = '<option value="">-- 中項目を選択 --</option>';
                     const filtered = [...new Set(masterData.filter(r => r[0] === majorVal).map(r => r[1]))];
                     filtered.forEach(m => middleEl.add(new Option(m, m)));
-                    handleMasterChange(middleEl); // 中項目をリセット
+                    // 中項目が変わったので小項目もリセット
+                    handleMasterChange(middleEl);
                 }
             } else if (type === 'middle') {
-                const minorEl = document.querySelector(`select[data-group="${group}"][data-type="minor"]`);
+                const minorEl = document.querySelector(`select[name="${group} __ICF小"]`);
                 if (minorEl) {
-                    minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+                    minorEl.innerHTML = '<option value="">-- 小項目を選択 --</option>';
                     const filtered = masterData.filter(r => r[0] === majorVal && r[1] === target.value);
                     filtered.forEach(r => minorEl.add(new Option(r[2], r[2])));
                 }
             }
         }
 
+        // --- 以下、以前と同じ関数 ---
         function updateCount() {
             const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
             document.querySelectorAll('.counter').forEach(c => c.innerText = count + " / 3 選択済み");
