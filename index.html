@@ -11,7 +11,7 @@
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
-        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; }
+        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
@@ -52,8 +52,7 @@
     </div>
 
     <script>
-        // ★GitHub移植時はここを「GASのデプロイURL」に書き換えるだけ
-        const GAS_URL = location.href.split('?')[0].includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbwCAysV009cicDzjOnaj0iJaP8celuhFioDdxA_9V0JlXd9lwAdrRbQwIaRBPYoFCX9/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzdEkHwREs45RNjH5po1USgqG7lOQVMph2KsoD_kEStoBt9EgYx72S1ScOMPm-ZFzc/exec";
         let masterLists = [];
 
         window.onload = () => {
@@ -64,9 +63,7 @@
                     render(res.config);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
-                }).catch(err => {
-                    document.getElementById('loading').innerText = "通信エラーが発生しました。";
-                });
+                }).catch(err => { alert("通信エラー"); });
         };
 
         function render(config) {
@@ -89,19 +86,20 @@
                 const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
 
                 let input;
-                // 型判定：master_major等
                 if (type.includes('master_')) {
                     input = document.createElement('select'); input.name = name;
+                    // 「参加長期 1」などの最初の空白までをグループキーにする
                     input.dataset.group = name.split(' ')[0].trim();
-                    input.dataset.lv = type.replace('master_', '');
+                    input.dataset.lv = type.replace('master_', ''); // major, middle, minor
                     input.onchange = (e) => syncICF(e.target);
+                    input.classList.add('icf-select');
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || (type !== 'text' && type !== 'email' && options.length > 0)) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 } else {
-                    input = document.createElement('input'); input.type = type === 'email' ? 'email' : 'text';
+                    input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
                 
                 input.name = name; 
@@ -117,24 +115,23 @@
         }
 
         function initICF() {
-            const m = [...new Set(masterLists.map(r => r[0]))];
+            const majors = [...new Set(masterLists.map(r => r[0]))].filter(v => v);
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                m.forEach(v => { if(v) el.add(new Option(v, v)); });
+                majors.forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
-            const g = target.dataset.group, lv = target.dataset.lv;
-            const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-            if(!majorEl) return;
-            const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-            const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+            const group = target.dataset.group, lv = target.dataset.lv;
+            const majorEl = document.querySelector(`select[data-group="${group}"][data-lv="major"]`);
+            const middleEl = document.querySelector(`select[data-group="${group}"][data-lv="middle"]`);
+            const minorEl = document.querySelector(`select[data-group="${group}"][data-lv="minor"]`);
 
             if (lv === 'major' && middleEl) {
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = [...new Set(masterLists.filter(r => r[0] === majorEl.value).map(r => r[1]))];
-                filtered.forEach(v => { if(v) middleEl.add(new Option(v, v)); });
+                const filtered = [...new Set(masterLists.filter(r => r[0] === majorEl.value).map(r => r[1]))].filter(v => v);
+                filtered.forEach(v => middleEl.add(new Option(v, v)));
                 if(minorEl) minorEl.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
@@ -146,7 +143,7 @@
 
         function searchData() {
             const email = document.getElementById('search-email').value;
-            if (!email) return alert("メールアドレスを入力してください");
+            if (!email) return alert("アドレスを入力してください");
             fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email), { redirect: "follow" })
                 .then(r => r.json()).then(res => {
                     if (res.error === "なし") return alert("過去データなし");
@@ -155,6 +152,7 @@
                         const els = document.getElementsByName(key);
                         if (els.length > 0) { 
                             els[0].value = res.data[key]; 
+                            // 設定後に手動でchangeイベントを発火させて連動を動かす
                             if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change')); 
                         }
                     }
