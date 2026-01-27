@@ -28,7 +28,7 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <div id="loading">項目を生成中...</div>
+            <div id="loading">データを取得中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
@@ -48,21 +48,23 @@
     </div>
 
     <script>
-        // ★最新のデプロイURL(/exec)に差し替えてください
+        // 指定いただいたデプロイURL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyVXqSkdzJtwlfWF6Ub5ppaIK4obb7wuCOjsfuIE9lOQfUeAHniuXG7tajMrPJk-jvi/exec";
-        let masterData = []; // listsシートのデータ
+        let masterData = [];
 
         window.onload = () => {
+            // redirect: follow を強制し、CORSを回避する
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
-                    masterData = res.lists; // lists（連動用データ）を保存
-                    render(res.config);    // config（項目設定）を元に描画
+                    masterData = res.lists;
+                    render(res.config);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
                 })
                 .catch(err => {
-                    document.getElementById('loading').innerText = "通信エラー: データの取得に失敗しました。";
+                    document.getElementById('loading').innerText = "通信エラー: GAS側の設定を確認してください。";
+                    console.error(err);
                 });
         };
 
@@ -71,7 +73,6 @@
             const faceArea = document.getElementById('face-image-area');
             fieldsDiv.innerHTML = '';
             
-            // config配列をループ（GAS側のロジックを完全再現）
             config.forEach(row => {
                 let name = row[0];
                 let type = String(row[1]).toLowerCase();
@@ -81,7 +82,7 @@
 
                 if (!name || name === "項目名") return;
 
-                // Faceタブ用の画像処理
+                // Face情報タブ（ニックネーム画像）の処理
                 if (name === "ニックネーム") {
                     if (imgUrl) {
                         document.getElementById('face-title').style.display = 'block';
@@ -89,13 +90,12 @@
                         fimg.src = getThumbnailUrl(imgUrl);
                         faceArea.appendChild(fimg);
                     }
-                    return; // 入力フォームには出さない
+                    return;
                 }
 
                 const group = document.createElement('div');
                 group.className = 'field-group';
 
-                // 項目の図を表示
                 if (imgUrl) {
                     const img = document.createElement('img');
                     img.src = getThumbnailUrl(imgUrl);
@@ -107,23 +107,23 @@
                 group.appendChild(lbl);
 
                 let input;
-                // ★連動選択（ICF大/中/小）の生成ロジック
+                // ICF連動項目の判定
                 if (name.includes('__ICF')) {
                     input = document.createElement('select');
                     input.name = name;
                     // グループ名（例：参加長期1）を抽出
                     input.dataset.group = name.split('__')[0].trim();
-                    if (name.includes('大')) input.dataset.level = 'major';
-                    if (name.includes('中')) input.dataset.level = 'middle';
-                    if (name.includes('小')) input.dataset.level = 'minor';
-                    input.onchange = (e) => syncSelects(e.target);
+                    if (name.includes('ICF大')) input.dataset.level = 'major';
+                    if (name.includes('ICF中')) input.dataset.level = 'middle';
+                    if (name.includes('ICF小')) input.dataset.level = 'minor';
+                    input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea');
                     input.rows = 4;
-                } else if (type === 'select' || options.length > 1) {
+                } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select');
                     input.add(new Option("-- 選択 --", ""));
-                    options.forEach(opt => input.add(new Option(opt, opt)));
+                    options.forEach(opt => input.add(new Option(opt.trim(), opt.trim())));
                 } else {
                     input = document.createElement('input');
                     input.type = type || 'text';
@@ -133,7 +133,6 @@
                 if (maxLen) input.maxLength = maxLen;
                 group.appendChild(input);
 
-                // 赤字の文字数ヒント
                 if (maxLen && !isNaN(maxLen)) {
                     const hint = document.createElement('span');
                     hint.className = 'char-hint';
@@ -141,7 +140,6 @@
                     group.appendChild(hint);
                 }
 
-                // 転記カウンター
                 if (name.includes('計画書へ転記')) {
                     input.classList.add('count-target');
                     input.addEventListener('change', updateCount);
@@ -152,11 +150,11 @@
                 }
                 fieldsDiv.appendChild(group);
             });
-            initMajors(); // 大項目の選択肢を初期セット
+            initICFMajors();
         }
 
-        // 大項目のプルダウンを埋める
-        function initMajors() {
+        // 大項目の初期リスト作成
+        function initICFMajors() {
             const majors = [...new Set(masterData.map(r => r[0]))];
             document.querySelectorAll('select[data-level="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 大項目を選択 --</option>';
@@ -164,8 +162,8 @@
             });
         }
 
-        // 連動処理（中・小をフィルタリング）
-        function syncSelects(target) {
+        // ICF連動ロジック
+        function syncICF(target) {
             const group = target.dataset.group;
             const level = target.dataset.level;
             const majorEl = document.querySelector(`select[data-group="${group}"][data-level="major"]`);
@@ -176,7 +174,7 @@
                 middleEl.innerHTML = '<option value="">-- 中項目を選択 --</option>';
                 const filtered = [...new Set(masterData.filter(r => r[0] === majorEl.value).map(r => r[1]))];
                 filtered.forEach(m => middleEl.add(new Option(m, m)));
-                syncSelects(middleEl); // 小項目もリセット
+                syncICF(middleEl);
             } else if (level === 'middle') {
                 minorEl.innerHTML = '<option value="">-- 小項目を選択 --</option>';
                 const filtered = masterData.filter(r => r[0] === majorEl.value && r[1] === middleEl.value);
