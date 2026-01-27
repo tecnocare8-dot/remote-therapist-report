@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Remote Therapist®</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
         .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
@@ -11,12 +10,12 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; background: #f9f9f9; }
-        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
-        .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
-        .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
+        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        .char-hint { color: #d93025; font-size: 13px; font-weight: bold; display: block; text-align: right; margin-top: 4px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
     </style>
 </head>
@@ -28,8 +27,14 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <div id="loading">データを読込中...</div>
+            <div class="search-area">
+                <label>前回データ検索（メールアドレス）</label>
+                <input type="email" id="search-email" placeholder="example@gmail.com">
+                <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
+            </div>
+            <div id="loading">読込中...</div>
             <form id="mainForm" style="display:none;">
+                <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
@@ -38,164 +43,141 @@
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
-            <h3 id="face-title" style="display:none;">Face情報</h3>
-            <div id="face-image-area"></div>
-            <h3 style="margin-top:40px; color:#1a73e8;">参考動画</h3>
-            <div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px;">
+            <h3>Face情報</h3>
+            <div id="face-img-area"></div>
+            <div style="margin-top:40px; position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px;">
                 <iframe src="https://www.youtube.com/embed/4_bGkHOccg4" style="position:absolute; top:0; left:0; width:100%; height:100%;" frameborder="0" allowfullscreen></iframe>
             </div>
         </div>
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbyVXqSkdzJtwlfWF6Ub5ppaIK4obb7wuCOjsfuIE9lOQfUeAHniuXG7tajMrPJk-jvi/exec";
-        let masterData = [];
+        // ★GitHub移植時はここを「GASのデプロイURL」に書き換えるだけ
+        const GAS_URL = location.href.split('?')[0].includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbwCAysV009cicDzjOnaj0iJaP8celuhFioDdxA_9V0JlXd9lwAdrRbQwIaRBPYoFCX9/exec";
+        let masterLists = [];
 
         window.onload = () => {
             fetch(GAS_URL + "?action=init", { redirect: "follow" })
                 .then(r => r.json())
                 .then(res => {
-                    masterData = res.lists;
-                    render(res);
+                    masterLists = res.lists;
+                    render(res.config);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
-                })
-                .catch(err => {
+                }).catch(err => {
                     document.getElementById('loading').innerText = "通信エラーが発生しました。";
-                    console.error(err);
                 });
         };
 
-        function render(res) {
+        function render(config) {
             const fieldsDiv = document.getElementById('fields');
-            const faceArea = document.getElementById('face-image-area');
-            fieldsDiv.innerHTML = '';
+            const faceArea = document.getElementById('face-img-area');
+            fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
-            // 1. Face画像の処理
-            if (res.imagesMap && res.imagesMap['ニックネーム']) {
-                document.getElementById('face-title').style.display = 'block';
-                const fimg = document.createElement('img');
-                fimg.src = res.imagesMap['ニックネーム'];
-                faceArea.appendChild(fimg);
-            }
+            config.forEach(row => {
+                let name = row[0], type = String(row[1]).trim(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
+                if (!name || name === "項目名") return;
 
-            // 2. 報告入力項目の生成（res.settingsをループ）
-            res.settings.forEach(item => {
-                if (!item.name || item.name === "ニックネーム") return;
-
-                const group = document.createElement('div');
-                group.className = 'field-group';
-
-                // 図の表示
-                if (res.imagesMap && res.imagesMap[item.name]) {
-                    const img = document.createElement('img');
-                    img.src = res.imagesMap[item.name];
-                    group.appendChild(img);
+                if (name === "ニックネーム") {
+                    if (imgUrl) { const img = document.createElement('img'); img.src = getThumb(imgUrl); faceArea.appendChild(img); }
+                    return;
                 }
 
-                const lbl = document.createElement('label');
-                lbl.innerText = item.name;
-                group.appendChild(lbl);
+                const group = document.createElement('div'); group.className = 'field-group';
+                if (imgUrl) { const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img); }
+
+                const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
 
                 let input;
-                // 連動選択の判定
-                if (item.name.includes('__ICF')) {
-                    input = document.createElement('select');
-                    input.name = item.name;
-                    input.dataset.group = item.name.split('__')[0].trim();
-                    if (item.name.includes('大')) input.dataset.level = 'major';
-                    if (item.name.includes('中')) input.dataset.level = 'middle';
-                    if (item.name.includes('小')) input.dataset.level = 'minor';
+                // 型判定：master_major等
+                if (type.includes('master_')) {
+                    input = document.createElement('select'); input.name = name;
+                    input.dataset.group = name.split(' ')[0].trim();
+                    input.dataset.lv = type.replace('master_', '');
                     input.onchange = (e) => syncICF(e.target);
-                    input.classList.add('master-select');
-                } else if (item.type === 'textarea') {
-                    input = document.createElement('textarea');
-                    input.rows = 4;
-                } else if (item.type === 'select' || (item.options && item.options.length > 0)) {
-                    input = document.createElement('select');
-                    input.add(new Option("-- 選択 --", ""));
-                    item.options.forEach(o => input.add(new Option(o.trim(), o.trim())));
+                } else if (type === 'textarea') {
+                    input = document.createElement('textarea'); input.rows = 4;
+                } else if (type === 'select' || (type !== 'text' && type !== 'email' && options.length > 0)) {
+                    input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
+                    options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 } else {
-                    input = document.createElement('input');
-                    input.type = item.type || 'text';
+                    input = document.createElement('input'); input.type = type === 'email' ? 'email' : 'text';
                 }
                 
-                input.name = item.name;
-                if (item.maxLength) input.maxLength = item.maxLength;
+                input.name = name; 
+                if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
                 group.appendChild(input);
 
-                if (item.maxLength) {
-                    const hint = document.createElement('span');
-                    hint.className = 'char-hint';
-                    hint.innerText = "※最大 " + item.maxLength + " 文字まで";
-                    group.appendChild(hint);
-                }
-
-                if (item.name.includes('計画書へ転記')) {
-                    input.classList.add('count-target');
-                    input.onchange = updateCount;
-                    const counter = document.createElement('div');
-                    counter.className = 'counter';
-                    counter.innerText = "0 / 3 選択済み";
-                    group.appendChild(counter);
+                if (maxLen && !isNaN(maxLen)) {
+                    const hint = document.createElement('span'); hint.className = 'char-hint'; hint.innerText = "※最大 " + maxLen + " 文字まで"; group.appendChild(hint);
                 }
                 fieldsDiv.appendChild(group);
             });
-            initICFMajors();
+            initICF();
         }
 
-        function initICFMajors() {
-            const majors = [...new Set(masterData.map(r => r[0]))];
-            document.querySelectorAll('select[data-level="major"]').forEach(el => {
-                el.innerHTML = '<option value="">-- 大項目を選択 --</option>';
-                majors.forEach(m => { if(m) el.add(new Option(m, m)); });
+        function initICF() {
+            const m = [...new Set(masterLists.map(r => r[0]))];
+            document.querySelectorAll('select[data-lv="major"]').forEach(el => {
+                el.innerHTML = '<option value="">-- 選択 --</option>';
+                m.forEach(v => { if(v) el.add(new Option(v, v)); });
             });
         }
 
         function syncICF(target) {
-            const group = target.dataset.group;
-            const level = target.dataset.level;
-            const majorEl = document.querySelector(`select[data-group="${group}"][data-level="major"]`);
-            const middleEl = document.querySelector(`select[data-group="${group}"][data-level="middle"]`);
-            const minorEl = document.querySelector(`select[data-group="${group}"][data-level="minor"]`);
+            const g = target.dataset.group, lv = target.dataset.lv;
+            const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+            if(!majorEl) return;
+            const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+            const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-            if (level === 'major') {
-                if (middleEl) {
-                    middleEl.innerHTML = '<option value="">-- 中項目を選択 --</option>';
-                    const filtered = [...new Set(masterData.filter(r => r[0] === majorEl.value).map(r => r[1]))];
-                    filtered.forEach(m => { if(m) middleEl.add(new Option(m, m)); });
-                    syncICF(middleEl);
-                }
-            } else if (level === 'middle') {
-                if (minorEl) {
-                    minorEl.innerHTML = '<option value="">-- 小項目を選択 --</option>';
-                    const filtered = masterData.filter(r => r[0] === majorEl.value && r[1] === middleEl.value);
-                    filtered.forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
-                }
+            if (lv === 'major' && middleEl) {
+                middleEl.innerHTML = '<option value="">-- 選択 --</option>';
+                const filtered = [...new Set(masterLists.filter(r => r[0] === majorEl.value).map(r => r[1]))];
+                filtered.forEach(v => { if(v) middleEl.add(new Option(v, v)); });
+                if(minorEl) minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+            } else if (lv === 'middle' && minorEl) {
+                minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+                masterLists.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
+                    if(r[2]) minorEl.add(new Option(r[2], r[2]));
+                });
             }
         }
 
-        function updateCount() {
-            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
-            document.querySelectorAll('.counter').forEach(c => c.innerText = count + " / 3 選択済み");
-            if (count > 3) alert("計画書への転記は3つまでにしてください");
+        function searchData() {
+            const email = document.getElementById('search-email').value;
+            if (!email) return alert("メールアドレスを入力してください");
+            fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email), { redirect: "follow" })
+                .then(r => r.json()).then(res => {
+                    if (res.error === "なし") return alert("過去データなし");
+                    document.getElementById('rowNum').value = res.rowNum;
+                    for (let key in res.data) {
+                        const els = document.getElementsByName(key);
+                        if (els.length > 0) { 
+                            els[0].value = res.data[key]; 
+                            if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change')); 
+                        }
+                    }
+                    alert("読込完了");
+                });
+        }
+
+        function getThumb(url) {
+            let id = url.includes("/d/") ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
+            return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
         }
 
         function switchTab(id, btn) {
             document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('tab-' + id).style.display = 'block';
-            btn.classList.add('active');
+            document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
         }
 
         function sendData() {
-            const btn = document.querySelector('.btn-send');
-            btn.disabled = true;
-            btn.innerText = "送信中...";
+            const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
             const formData = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) }).then(() => {
-                alert("送信完了しました");
-                location.reload();
+                alert("送信完了"); location.reload();
             });
         }
     </script>
