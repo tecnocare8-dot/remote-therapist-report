@@ -33,7 +33,7 @@
                 <input type="email" id="search-email" placeholder="example@gmail.com">
                 <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
             </div>
-            <div id="loading">読込中...</div>
+            <div id="loading">読み込み中...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -58,7 +58,7 @@
                     render(res.config);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainForm').style.display = 'block';
-                });
+                }).catch(err => { document.getElementById('loading').innerText = "エラー: GASの設定を確認してください"; });
         };
 
         function render(config) {
@@ -70,14 +70,14 @@
                 let name = row[0], type = String(row[1]).trim(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
                 if (!name || name === "項目名") return;
 
-                // ニックネーム画像はFace情報タブのみに表示
+                // ニックネーム画像はFace情報タブへ隔離
                 if (name === "ニックネーム" && imgUrl) {
                     const img = document.createElement('img'); img.src = getThumb(imgUrl); faceArea.appendChild(img);
                 }
 
                 const group = document.createElement('div'); group.className = 'field-group';
                 
-                // ★修正：ニックネームの場合はフォーム内に画像を出さない
+                // ニックネーム以外はフォーム内に画像を表示
                 if (imgUrl && name !== "ニックネーム") {
                     const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
                 }
@@ -85,10 +85,11 @@
                 const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
 
                 let input;
+                // 型判定：master_ か function_ かを正確に判別
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select'); input.name = name;
                     input.dataset.group = name.split('_')[0].trim();
-                    input.dataset.listType = type.includes('function_') ? 'function' : 'master';
+                    input.dataset.source = type.includes('function_') ? 'function' : 'master';
                     input.dataset.lv = type.split('_')[1];
                     input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
@@ -103,6 +104,7 @@
                 input.name = name; if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
                 group.appendChild(input);
 
+                // 計画書へ転記カウンター (最大 3つまで)
                 if (name.includes('計画書へ転記')) {
                     input.classList.add('count-target'); input.addEventListener('change', updateCount);
                     const cDiv = document.createElement('div'); cDiv.className = 'counter'; cDiv.innerText = "0 / 3 選択済み"; group.appendChild(cDiv);
@@ -115,26 +117,27 @@
         function initICF() {
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                const currentList = el.dataset.listType === 'function' ? functionLists : masterLists;
-                const majors = [...new Set(currentList.map(r => r[0]))].filter(v => v);
+                const list = el.dataset.source === 'function' ? functionLists : masterLists;
+                const majors = [...new Set(list.map(r => r[0]))].filter(v => v);
                 majors.forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
-            const g = target.dataset.group, lv = target.dataset.lv, listType = target.dataset.listType;
-            const currentList = listType === 'function' ? functionLists : masterLists;
+            const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
+            const list = src === 'function' ? functionLists : masterLists;
             const majorVal = document.querySelector(`select[data-group="${g}"][data-lv="major"]`).value;
             const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
             if (lv === 'major' && middleEl) {
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = [...new Set(currentList.filter(r => r[0] === majorVal).map(r => r[1]))].filter(v => v);
+                const filtered = [...new Set(list.filter(r => r[0] === majorVal).map(r => r[1]))].filter(v => v);
                 filtered.forEach(v => middleEl.add(new Option(v, v)));
+                if(minorEl) { minorEl.innerHTML = '<option value="">-- 選択 --</option>'; syncICF(middleEl); }
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                currentList.filter(r => r[0] === majorVal && r[1] === target.value).forEach(r => {
+                list.filter(r => r[0] === majorVal && r[1] === target.value).forEach(r => {
                     if(r[2]) minorEl.add(new Option(r[2], r[2]));
                 });
             }
@@ -143,14 +146,14 @@
         function updateCount() {
             const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
             document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
-            if (count > 3) alert("3つまでにしてください");
+            if (count > 3) alert("計画書への転記は3つまでにしてください。");
         }
 
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力");
             fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email)).then(r => r.json()).then(res => {
-                if (res.error === "なし") return alert("なし");
+                if (res.error === "なし") return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
                 for (let key in res.data) {
                     const els = document.getElementsByName(key);
