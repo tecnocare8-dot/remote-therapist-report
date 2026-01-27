@@ -1,161 +1,243 @@
-<script>
-    const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbzBNSOZVd68XHIvrBkUoOCJF_cHBK5sNUWdo-IGwOIQGrXLcaK8-1C4xKtjAItdzdSM/exec";
-    let masterLists = [];
-    let functionLists = [];
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Remote Therapist®</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
+        .tab-menu { display: flex; position: sticky; top: 0; background: #fff; z-index: 1000; border-bottom: 1px solid #ddd; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
+        .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
+        .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
+        label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
+        #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
+        iframe { border-radius: 8px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="tab-menu">
+        <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
+        <button class="tab-btn" onclick="switchTab('face', this)">Face情報</button>
+    </div>
 
-    window.onload = () => {
-        fetch(GAS_URL + "?action=init", { redirect: "follow" })
-            .then(r => r.json())
-            .then(res => {
-                masterLists = res.lists;
-                functionLists = res.functionLists;
-                render(res.config);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('mainForm').style.display = 'block';
-            }).catch(err => { document.getElementById('loading').innerText = "エラー: GASの設定を確認してください"; });
-    };
+    <div id="tab-input" class="tab-content">
+        <div class="container">
+            <div class="search-area">
+                <label>前回データ検索（メールアドレス）</label>
+                <input type="email" id="search-email" placeholder="example@gmail.com">
+                <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
+            </div>
+            <div id="loading">読み込み中...</div>
+            <form id="mainForm" style="display:none;">
+                <input type="hidden" name="rowNum" id="rowNum">
+                <div id="fields"></div>
+                <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
+            </form>
+        </div>
+    </div>
 
-    function render(config) {
-        const fieldsDiv = document.getElementById('fields');
-        const faceArea = document.getElementById('face-img-area');
-        fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
-        
-        config.forEach(row => {
-            let name = row[0], type = String(row[1]).trim(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
-            if (!name || name === "項目名") return;
+    <div id="tab-face" class="tab-content" style="display:none;">
+        <div class="container">
+            <h3>Face情報</h3>
+            <div id="face-img-area"></div>
+        </div>
+    </div>
 
-            // --- 【修正】face型とmovie型の処理 ---
-            if (type === 'face' || type === 'movie') {
-                const div = document.createElement('div');
-                div.style.marginBottom = "20px";
-                const lbl = document.createElement('label'); lbl.innerText = name; div.appendChild(lbl);
-                
-                if (type === 'face' && imgUrl) {
-                    const img = document.createElement('img'); img.src = getThumb(imgUrl); div.appendChild(img);
-                } else if (type === 'movie' && imgUrl) {
-                    const videoId = imgUrl.split('v=')[1] || imgUrl.split('/').pop();
-                    div.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>`;
-                }
-                faceArea.appendChild(div);
-                return; // フォーム側には表示しない
-            }
+    <script>
+        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbzBNSOZVd68XHIvrBkUoOCJF_cHBK5sNUWdo-IGwOIQGrXLcaK8-1C4xKtjAItdzdSM/exec";
+        let masterLists = [];
+        let functionLists = [];
 
-            const group = document.createElement('div'); group.className = 'field-group';
-            if (imgUrl && name !== "ニックネーム") {
-                const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
-            }
+        window.onload = () => {
+            fetch(GAS_URL + "?action=init", { redirect: "follow" })
+                .then(r => r.json())
+                .then(res => {
+                    masterLists = res.lists;
+                    functionLists = res.functionLists;
+                    render(res.config);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('mainForm').style.display = 'block';
+                }).catch(err => { document.getElementById('loading').innerText = "エラー: GASの設定を確認してください"; });
+        };
 
-            const lbl = document.createElement('label'); lbl.innerText = name; group.appendChild(lbl);
-
-            let input;
-            if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
-                input = document.createElement('select');
-                input.dataset.group = name.split('_')[0].trim();
-                input.dataset.source = type.includes('function_') ? 'function' : 'master';
-                input.dataset.lv = type.split('_')[1];
-                input.onchange = (e) => syncICF(e.target);
-            } else if (type === 'textarea') {
-                input = document.createElement('textarea'); input.rows = 4;
-            } else if (type === 'select' || options.length > 0) {
-                input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
-                options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-            } else {
-                input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
-            }
+        function render(config) {
+            const fieldsDiv = document.getElementById('fields');
+            const faceArea = document.getElementById('face-img-area');
+            fieldsDiv.innerHTML = ''; 
+            faceArea.innerHTML = '';
             
-            input.name = name; if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
-            group.appendChild(input);
+            config.forEach(row => {
+                let name = row[0], 
+                    type = String(row[1]).trim().toLowerCase(), 
+                    options = row[2] ? String(row[2]).split(',') : [], 
+                    maxLen = row[3], 
+                    valOrUrl = row[4];
 
-            if (name.includes('計画書へ転記')) {
-                input.classList.add('count-target'); input.addEventListener('change', updateCount);
-                const cDiv = document.createElement('div'); cDiv.className = 'counter'; cDiv.innerText = "0 / 3 選択済み"; group.appendChild(cDiv);
-            }
-            fieldsDiv.appendChild(group);
-        });
-        initICF();
-    }
+                if (!name || name === "項目名") return;
 
-    function initICF() {
-        document.querySelectorAll('select[data-lv="major"]').forEach(el => {
-            el.innerHTML = '<option value="">-- 選択 --</option>';
-            const list = el.dataset.source === 'function' ? functionLists : masterLists;
-            const majors = [...new Set(list.map(r => r[0]))].filter(v => v);
-            majors.forEach(v => el.add(new Option(v, v)));
-        });
-    }
+                // --- Face型・Movie型の隔離処理 ---
+                if (type === 'face' || type === 'movie') {
+                    const mediaGroup = document.createElement('div');
+                    mediaGroup.style.marginBottom = "30px";
+                    mediaGroup.innerHTML = `<label style="color:#1a73e8; border-bottom:1px solid #1a73e8; margin-bottom:10px;">${name}</label>`;
+                    
+                    if (type === 'face' && valOrUrl) {
+                        const img = document.createElement('img');
+                        img.src = getThumb(valOrUrl);
+                        mediaGroup.appendChild(img);
+                    } else if (type === 'movie' && valOrUrl) {
+                        const videoId = valOrUrl.includes('v=') ? valOrUrl.split('v=')[1].split('&')[0] : valOrUrl.split('/').pop();
+                        mediaGroup.innerHTML += `<iframe width="100%" height="315" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                    }
+                    faceArea.appendChild(mediaGroup);
+                    return; // フォーム側には追加せず終了
+                }
 
-    function syncICF(target) {
-        const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
-        const list = src === 'function' ? functionLists : masterLists;
-        const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-        const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-        const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+                // --- 通常の入力フォーム生成 ---
+                const group = document.createElement('div');
+                group.className = 'field-group';
+                
+                if (valOrUrl && name !== "ニックネーム") {
+                    const img = document.createElement('img');
+                    img.src = getThumb(valOrUrl);
+                    group.appendChild(img);
+                }
 
-        if (lv === 'major' && middleEl) {
-            middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-            const filtered = [...new Set(list.filter(r => r[0] === target.value).map(r => r[1]))].filter(v => v);
-            filtered.forEach(v => middleEl.add(new Option(v, v)));
-            if(minorEl) { minorEl.innerHTML = '<option value="">-- 選択 --</option>'; }
-        } else if (lv === 'middle' && minorEl) {
-            minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-            list.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
-                if(r[2]) minorEl.add(new Option(r[2], r[2]));
+                const lbl = document.createElement('label');
+                lbl.innerText = name;
+                group.appendChild(lbl);
+
+                let input;
+                if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
+                    input = document.createElement('select');
+                    input.dataset.group = name.split('_')[0].trim();
+                    input.dataset.source = type.includes('function_') ? 'function' : 'master';
+                    input.dataset.lv = type.split('_')[1];
+                    input.onchange = (e) => syncICF(e.target);
+                } else if (type === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.rows = 4;
+                } else if (type === 'select' || options.length > 0) {
+                    input = document.createElement('select');
+                    input.add(new Option("-- 選択 --", ""));
+                    options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+                } else {
+                    input = document.createElement('input');
+                    input.type = (type === 'email') ? 'email' : 'text';
+                }
+                
+                input.name = name;
+                if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
+                group.appendChild(input);
+
+                if (name.includes('計画書へ転記')) {
+                    input.classList.add('count-target');
+                    input.addEventListener('change', updateCount);
+                    const cDiv = document.createElement('div');
+                    cDiv.className = 'counter';
+                    cDiv.innerText = "0 / 3 選択済み";
+                    group.appendChild(cDiv);
+                }
+                fieldsDiv.appendChild(group);
+            });
+            initICF();
+        }
+
+        function initICF() {
+            document.querySelectorAll('select[data-lv="major"]').forEach(el => {
+                el.innerHTML = '<option value="">-- 選択 --</option>';
+                const list = el.dataset.source === 'function' ? functionLists : masterLists;
+                const majors = [...new Set(list.map(r => r[0]))].filter(v => v);
+                majors.forEach(v => el.add(new Option(v, v)));
             });
         }
-    }
 
-    // --- 【重要修正】検索データの反映順序を制御 ---
-    async function searchData() {
-        const email = document.getElementById('search-email').value;
-        if (!email) return alert("アドレスを入力");
-        
-        const res = await fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email)).then(r => r.json());
-        if (res.error === "なし") return alert("過去データなし");
-        
-        document.getElementById('rowNum').value = res.rowNum;
+        function syncICF(target) {
+            const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
+            const list = src === 'function' ? functionLists : masterLists;
+            const majorEl = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+            const middleEl = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+            const minorEl = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-        // 1. まず通常の項目（textarea等）を埋める
-        for (let key in res.data) {
-            const els = document.getElementsByName(key);
-            if (els.length > 0 && !els[0].dataset.lv) {
-                els[0].value = res.data[key];
+            if (lv === 'major' && middleEl) {
+                middleEl.innerHTML = '<option value="">-- 選択 --</option>';
+                const filtered = [...new Set(list.filter(r => r[0] === target.value).map(r => r[1]))].filter(v => v);
+                filtered.forEach(v => middleEl.add(new Option(v, v)));
+                if(minorEl) { minorEl.innerHTML = '<option value="">-- 選択 --</option>'; }
+            } else if (lv === 'middle' && minorEl) {
+                minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+                list.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => {
+                    if(r[2]) minorEl.add(new Option(r[2], r[2]));
+                });
             }
         }
 
-        // 2. 連動プルダウンを「大→中→小」の順で確定させる
-        const levels = ['major', 'middle', 'minor'];
-        for (let lv of levels) {
+        async function searchData() {
+            const email = document.getElementById('search-email').value;
+            if (!email) return alert("アドレスを入力");
+            
+            const res = await fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email)).then(r => r.json());
+            if (res.error === "なし") return alert("過去データなし");
+            
+            document.getElementById('rowNum').value = res.rowNum;
+
+            // 1. 通常項目の反映
             for (let key in res.data) {
                 const els = document.getElementsByName(key);
-                if (els.length > 0 && els[0].dataset.lv === lv) {
+                if (els.length > 0 && !els[0].dataset.lv) {
                     els[0].value = res.data[key];
-                    els[0].dispatchEvent(new Event('change')); // 次の階層の選択肢を生成
                 }
             }
+
+            // 2. 連動プルダウンを階層順に反映（重要）
+            const levels = ['major', 'middle', 'minor'];
+            for (let lv of levels) {
+                for (let key in res.data) {
+                    const els = document.getElementsByName(key);
+                    if (els.length > 0 && els[0].dataset.lv === lv) {
+                        els[0].value = res.data[key];
+                        els[0].dispatchEvent(new Event('change'));
+                    }
+                }
+            }
+            
+            updateCount(); alert("読込完了");
         }
-        
-        updateCount(); alert("読込完了");
-    }
 
-    function updateCount() {
-        const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
-        document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
-    }
+        function updateCount() {
+            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
+            document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
+            if (count > 3) alert("計画書への転記は3つまでにしてください。");
+        }
 
-    function getThumb(url) {
-        let id = (url.includes("/d/")) ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
-        return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
-    }
+        function getThumb(url) {
+            let id = (url.includes("/d/")) ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
+            return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
+        }
 
-    function switchTab(id, btn) {
-        document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
-    }
+        function switchTab(id, btn) {
+            document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
+        }
 
-    function sendData() {
-        const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
-        const formData = Object.fromEntries(new FormData(document.getElementById('mainForm')).entries());
-        fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) }).then(() => { alert("送信完了"); location.reload(); });
-    }
-</script>
+        function sendData() {
+            const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
+            const form = document.getElementById('mainForm');
+            const formData = Object.fromEntries(new FormData(form).entries());
+            
+            // HTML5のバリデーションチェックが必要ならここに追加
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(formData) })
+                .then(() => { alert("送信完了"); location.reload(); })
+                .catch(err => { alert("送信エラー"); btn.disabled = false; });
+        }
+    </script>
+</body>
+</html>
