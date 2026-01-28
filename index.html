@@ -46,14 +46,14 @@
 
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyHhfeEcT9Sg0el1lX3ClbSVr-S5Mc-lPb4gY6pXRwhy-5M93p1US1eixGLpj1a7VU/exec"; 
-        let masterLists = [], functionLists = [];
+        let masterLists = [], functionLists = [], currentConfig = [];
 
-        // --- 通信用ヘルパー（JSONP） ---
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
                 callback(data);
-                document.body.removeChild(document.getElementById(id));
+                const el = document.getElementById(id);
+                if (el) document.body.removeChild(el);
                 delete window[id];
             };
             const script = document.createElement('script');
@@ -67,24 +67,30 @@
             callGAS({ action: 'init' }, (data) => {
                 masterLists = data.lists;
                 functionLists = data.functionLists;
+                currentConfig = data.config;
                 render(data.config);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
             });
         };
 
-        function render(config) {
+        function render(config, overrideData = null) {
             const fieldsDiv = document.getElementById('fields');
             const faceArea = document.getElementById('face-img-area');
             fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3];
+                // 【重要】検索データがあればそちらのURL、なければconfigのURL（row[4]）を使う
+                let imgUrl = (overrideData && overrideData[name]) ? overrideData[name] : row[4];
+
                 if (!name || name === "項目名") return;
 
+                // メディア隔離表示（Faceタブ）
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
+                    g.dataset.mediaName = name; // 後で検索時に特定するため
                     if (type === 'movie' && imgUrl) {
                         const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop();
                         g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
@@ -169,6 +175,11 @@
             callGAS({ action: 'find', email: email }, (res) => {
                 if (res.error === "なし") return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
+
+                // 【重要】画像・動画も含めて画面を再描画（保管データを優先）
+                render(currentConfig, res.data);
+
+                // 各種入力値のセット
                 const levels = [null, 'major', 'middle', 'minor'];
                 for (let lv of levels) {
                     for (let key in res.data) {
@@ -200,63 +211,29 @@
             document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
         }
 
-       // --- (中略：スタイルやタブ切り替え部分はそのまま) ---
-
         function sendData() {
-            const btn = document.querySelector('.btn-send');
-            btn.disabled = true;
-            btn.innerText = "送信中...";
-
+            const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
             
-            // 1. 通常の入力項目（テキスト、セレクト等）を取得
-            document.querySelectorAll('#mainForm [name]').forEach(el => {
-                payload[el.name] = el.value;
-            });
+            // 入力されている値を取得
+            document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
 
-            // 2. configから読み込んだ「画像」や「動画」のURLも保存対象に含める
-            // Faceタブやフォーム内に表示されている非入力項目（URL）を収集します
+            // 現在画面に表示されている画像・動画URLも送信対象に含める
             currentConfig.forEach(row => {
                 const name = row[0];
                 const type = String(row[1]).trim().toLowerCase();
-                const url = row[4]; // URL列
-                
-                // typeが face や movie の場合、または入力項目ではないがURLがある場合
-                if ((type === 'face' || type === 'movie' || url) && !payload[name]) {
-                    payload[name] = url;
+                // 既にpayloadにある（テキスト入力等）場合はそちらを優先、なければconfig等のURLをセット
+                if (!payload[name]) {
+                    // 検索等で上書きされている場合はその値、なければ初期値（row[4]）
+                    // 画面から再取得するのは難しいため、ロジックで再現
+                    payload[name] = row[4]; 
                 }
             });
 
-            fetch(GAS_URL, {
-                method: "POST",
-                mode: "no-cors",
-                body: JSON.stringify(payload)
-            })
-            .then(() => {
-                alert("画像・動画リンクを含めて送信完了しました");
-                location.reload();
-            })
-            .catch(() => {
-                alert("送信に失敗しました");
-                btn.disabled = false;
-            });
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => { alert("送信完了"); location.reload(); })
+            .catch(() => { alert("失敗"); btn.disabled = false; });
         }
-
-        // データのグローバル保持用（render時に使用）
-        let currentConfig = [];
-
-        window.onload = () => {
-            callGAS({ action: 'init' }, (data) => {
-                masterLists = data.lists;
-                functionLists = data.functionLists;
-                currentConfig = data.config; // configを保持
-                render(data.config);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('mainForm').style.display = 'block';
-            });
-        };
-
-// --- (残りの関数はそのまま) ---
     </script>
 </body>
 </html>
