@@ -33,7 +33,7 @@
                 <input type="email" id="search-email" placeholder="example@gmail.com">
                 <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
             </div>
-            <div id="loading">読み込み中...</div>
+            <div id="loading">項目を読み込み中...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -42,12 +42,7 @@
         </div>
     </div>
 
-    <div id="tab-face" class="tab-content" style="display:none;">
-        <div class="container">
-            <h3>Face情報</h3>
-            <div id="face-img-area"></div>
-        </div>
-    </div>
+    <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><h3>Face情報</h3><div id="face-img-area"></div></div></div>
 
     <script>
         // 【重要】ここにGASでデプロイしたURLを貼り付けてください
@@ -56,7 +51,7 @@
         let masterLists = [], functionLists = [];
 
         window.onload = () => {
-            // GitHubからGASに初期データをリクエストする方式に変更
+            // GitHubからGASに初期データをリクエスト
             fetch(GAS_URL + "?action=init")
                 .then(r => r.json())
                 .then(data => {
