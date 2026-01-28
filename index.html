@@ -2,7 +2,6 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Remote Therapist®</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
@@ -18,6 +17,7 @@
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
+        .limit-text { color: red; font-size: 12px; font-weight: normal; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -42,22 +42,24 @@
         </div>
     </div>
 
-    <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><h3>Face情報</h3><div id="face-img-area"></div></div></div>
+    <div id="tab-face" class="tab-content" style="display:none;">
+        <div class="container">
+            <h3>Face情報</h3>
+            <div id="face-img-area"></div>
+        </div>
+    </div>
 
     <script>
-        const GAS_URL = location.href.includes('/exec') ? location.href.split('?')[0] : "https://script.google.com/macros/s/AKfycbyBBie-w1tRZbLDpshO6kujOSeZxNzKi4Wbh593_QL80IHnjQ-E3NqHjH4jRQuZs7b5/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwDcWroq65hs8TIdPASR1bp0IbXopkkkCKsUrFajd3L3WWP03R8VGFfQTVYi27OBtTB/exec"
         let masterLists = [], functionLists = [];
 
         window.onload = () => {
-            fetch(GAS_URL + "?action=init", { redirect: "follow" })
-                .then(r => r.json())
-                .then(res => {
-                    masterLists = res.lists;
-                    functionLists = res.functionLists;
-                    render(res.config);
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('mainForm').style.display = 'block';
-                });
+            const data = JSON.parse('<?!= initData ?>');
+            masterLists = data.lists;
+            functionLists = data.functionLists;
+            render(data.config);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('mainForm').style.display = 'block';
         };
 
         function render(config) {
@@ -69,28 +71,32 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
                 if (!name || name === "項目名") return;
 
-                // --- Faceタブ隔離 ---
+                // Face情報タブ隔離
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
-                    const div = document.createElement('div');
-                    div.style.marginBottom = "25px";
-                    div.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
+                    const g = document.createElement('div'); g.style.marginBottom = "25px";
+                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
                     if (type === 'movie' && imgUrl) {
                         const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop();
-                        div.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
+                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
                     } else if (imgUrl) {
-                        div.innerHTML += `<img src="${getThumb(imgUrl)}">`;
+                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
                     }
-                    faceArea.appendChild(div);
+                    faceArea.appendChild(g);
                     if (type === 'face' || type === 'movie') return;
                 }
 
-                // --- フォーム項目生成 ---
-                const group = document.createElement('div');
-                group.className = 'field-group';
+                const group = document.createElement('div'); group.className = 'field-group';
                 if (imgUrl && name !== "ニックネーム") {
-                    group.innerHTML += `<img src="${getThumb(imgUrl)}">`;
+                    const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
                 }
-                group.innerHTML += `<label>${name}</label>`;
+
+                const lbl = document.createElement('label');
+                lbl.innerText = name;
+                if (maxLen && !isNaN(maxLen)) {
+                    const span = document.createElement('span'); span.className = 'limit-text';
+                    span.innerText = ` (最大 ${maxLen} 文字)`; lbl.appendChild(span);
+                }
+                group.appendChild(lbl);
 
                 let input;
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
@@ -102,22 +108,20 @@
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
-                    input = document.createElement('select');
-                    input.add(new Option("-- 選択 --", ""));
+                    input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 } else {
-                    input = document.createElement('input');
-                    input.type = (type === 'email') ? 'email' : 'text';
+                    input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
                 
                 input.name = name;
-                if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen; // 上限文字数
+                if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
                 group.appendChild(input);
 
                 if (name.includes('計画書へ転記')) {
-                    input.classList.add('count-target');
-                    input.addEventListener('change', updateCount);
-                    group.innerHTML += `<div class="counter">0 / 3 選択済み</div>`;
+                    input.classList.add('count-target'); input.addEventListener('change', updateCount);
+                    const cDiv = document.createElement('div'); cDiv.className = 'counter';
+                    cDiv.innerText = "0 / 3 選択済み"; group.appendChild(cDiv);
                 }
                 fieldsDiv.appendChild(group);
             });
@@ -156,21 +160,13 @@
             if (res.error === "なし") return alert("過去データなし");
             document.getElementById('rowNum').value = res.rowNum;
 
-            // 1. 通常項目の反映
-            for (let key in res.data) {
-                const els = document.getElementsByName(key);
-                if (els.length > 0 && !els[0].dataset.lv) {
-                    els[0].value = res.data[key];
-                }
-            }
-            // 2. 連動項目の反映 (大→中→小の順で確定させる)
-            const levels = ['major', 'middle', 'minor'];
+            const levels = [null, 'major', 'middle', 'minor'];
             for (let lv of levels) {
                 for (let key in res.data) {
                     const els = document.getElementsByName(key);
-                    if (els.length > 0 && els[0].dataset.lv === lv) {
+                    if (els.length > 0 && (els[0].dataset.lv || null) === lv) {
                         els[0].value = res.data[key];
-                        els[0].dispatchEvent(new Event('change'));
+                        if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change'));
                     }
                 }
             }
