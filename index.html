@@ -200,14 +200,63 @@
             document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
         }
 
+       // --- (中略：スタイルやタブ切り替え部分はそのまま) ---
+
         function sendData() {
-            const btn = document.querySelector('.btn-send'); btn.disabled = true; btn.innerText = "送信中...";
+            const btn = document.querySelector('.btn-send');
+            btn.disabled = true;
+            btn.innerText = "送信中...";
+
             const payload = {};
-            document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => { alert("送信完了"); location.reload(); })
-            .catch(() => { alert("失敗"); btn.disabled = false; });
+            
+            // 1. 通常の入力項目（テキスト、セレクト等）を取得
+            document.querySelectorAll('#mainForm [name]').forEach(el => {
+                payload[el.name] = el.value;
+            });
+
+            // 2. configから読み込んだ「画像」や「動画」のURLも保存対象に含める
+            // Faceタブやフォーム内に表示されている非入力項目（URL）を収集します
+            currentConfig.forEach(row => {
+                const name = row[0];
+                const type = String(row[1]).trim().toLowerCase();
+                const url = row[4]; // URL列
+                
+                // typeが face や movie の場合、または入力項目ではないがURLがある場合
+                if ((type === 'face' || type === 'movie' || url) && !payload[name]) {
+                    payload[name] = url;
+                }
+            });
+
+            fetch(GAS_URL, {
+                method: "POST",
+                mode: "no-cors",
+                body: JSON.stringify(payload)
+            })
+            .then(() => {
+                alert("画像・動画リンクを含めて送信完了しました");
+                location.reload();
+            })
+            .catch(() => {
+                alert("送信に失敗しました");
+                btn.disabled = false;
+            });
         }
+
+        // データのグローバル保持用（render時に使用）
+        let currentConfig = [];
+
+        window.onload = () => {
+            callGAS({ action: 'init' }, (data) => {
+                masterLists = data.lists;
+                functionLists = data.functionLists;
+                currentConfig = data.config; // configを保持
+                render(data.config);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainForm').style.display = 'block';
+            });
+        };
+
+// --- (残りの関数はそのまま) ---
     </script>
 </body>
 </html>
