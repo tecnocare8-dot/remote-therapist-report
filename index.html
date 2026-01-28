@@ -50,16 +50,26 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwDcWroq65hs8TIdPASR1bp0IbXopkkkCKsUrFajd3L3WWP03R8VGFfQTVYi27OBtTB/exec"
+        // 【重要】ここにGASでデプロイしたURLを貼り付けてください
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwDcWroq65hs8TIdPASR1bp0IbXopkkkCKsUrFajd3L3WWP03R8VGFfQTVYi27OBtTB/exec"; 
+
         let masterLists = [], functionLists = [];
 
         window.onload = () => {
-            const data = JSON.parse('<?!= initData ?>');
-            masterLists = data.lists;
-            functionLists = data.functionLists;
-            render(data.config);
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('mainForm').style.display = 'block';
+            // GitHubからGASに初期データをリクエストする方式に変更
+            fetch(GAS_URL + "?action=init")
+                .then(r => r.json())
+                .then(data => {
+                    masterLists = data.lists;
+                    functionLists = data.functionLists;
+                    render(data.config);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('mainForm').style.display = 'block';
+                })
+                .catch(err => {
+                    document.getElementById('loading').innerText = "通信エラー: URLを確認してください";
+                    console.error(err);
+                });
         };
 
         function render(config) {
@@ -71,7 +81,6 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3], imgUrl = row[4];
                 if (!name || name === "項目名") return;
 
-                // Face情報タブ隔離
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
