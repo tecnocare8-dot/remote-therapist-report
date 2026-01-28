@@ -33,7 +33,7 @@
                 <input type="email" id="search-email" placeholder="example@gmail.com">
                 <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
             </div>
-            <div id="loading">項目を読み込み中...</div>
+            <div id="loading">接続中...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -45,26 +45,32 @@
     <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><h3>Face情報</h3><div id="face-img-area"></div></div></div>
 
     <script>
-        // 【重要】ここにGASでデプロイしたURLを貼り付けてください
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwDcWroq65hs8TIdPASR1bp0IbXopkkkCKsUrFajd3L3WWP03R8VGFfQTVYi27OBtTB/exec"; 
-
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyHhfeEcT9Sg0el1lX3ClbSVr-S5Mc-lPb4gY6pXRwhy-5M93p1US1eixGLpj1a7VU/exec"; 
         let masterLists = [], functionLists = [];
 
+        // --- 通信用ヘルパー（JSONP） ---
+        function callGAS(params, callback) {
+            const id = 'jsonp_' + Date.now();
+            window[id] = (data) => {
+                callback(data);
+                document.body.removeChild(document.getElementById(id));
+                delete window[id];
+            };
+            const script = document.createElement('script');
+            script.id = id;
+            const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+            script.src = GAS_URL + '?' + query + '&callback=' + id;
+            document.body.appendChild(script);
+        }
+
         window.onload = () => {
-            // GitHubからGASに初期データをリクエスト
-            fetch(GAS_URL + "?action=init")
-                .then(r => r.json())
-                .then(data => {
-                    masterLists = data.lists;
-                    functionLists = data.functionLists;
-                    render(data.config);
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('mainForm').style.display = 'block';
-                })
-                .catch(err => {
-                    document.getElementById('loading').innerText = "通信エラー: URLを確認してください";
-                    console.error(err);
-                });
+            callGAS({ action: 'init' }, (data) => {
+                masterLists = data.lists;
+                functionLists = data.functionLists;
+                render(data.config);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainForm').style.display = 'block';
+            });
         };
 
         function render(config) {
@@ -157,24 +163,24 @@
             }
         }
 
-        async function searchData() {
+        function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力");
-            const res = await fetch(GAS_URL + "?action=find&email=" + encodeURIComponent(email)).then(r => r.json());
-            if (res.error === "なし") return alert("過去データなし");
-            document.getElementById('rowNum').value = res.rowNum;
-
-            const levels = [null, 'major', 'middle', 'minor'];
-            for (let lv of levels) {
-                for (let key in res.data) {
-                    const els = document.getElementsByName(key);
-                    if (els.length > 0 && (els[0].dataset.lv || null) === lv) {
-                        els[0].value = res.data[key];
-                        if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change'));
+            callGAS({ action: 'find', email: email }, (res) => {
+                if (res.error === "なし") return alert("過去データなし");
+                document.getElementById('rowNum').value = res.rowNum;
+                const levels = [null, 'major', 'middle', 'minor'];
+                for (let lv of levels) {
+                    for (let key in res.data) {
+                        const els = document.getElementsByName(key);
+                        if (els.length > 0 && (els[0].dataset.lv || null) === lv) {
+                            els[0].value = res.data[key];
+                            if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change'));
+                        }
                     }
                 }
-            }
-            updateCount(); alert("読込完了");
+                updateCount(); alert("読込完了");
+            });
         }
 
         function updateCount() {
