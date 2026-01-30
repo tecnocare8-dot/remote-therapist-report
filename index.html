@@ -223,10 +223,17 @@
             });
         }
 
-        function updateCount() {
-            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
-            document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
-        }
+       function updateCount() {
+    // 値が「転記する」と一致するものだけを抽出してカウント
+    const count = Array.from(document.querySelectorAll('.count-target'))
+        .filter(t => t.value === "転記する").length;
+    
+    document.querySelectorAll('.counter').forEach(el => {
+        el.innerText = count + " / 3 選択済み";
+        // 3つを超えた場合に色を変えるなどの視覚的フィードバックも可能
+        el.style.color = count > 3 ? "red" : "#1a73e8";
+    });
+}
 
         function getThumb(url) {
             if(!url) return "";
