@@ -97,18 +97,27 @@
 
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
+                // --- render関数内の修正箇所 ---
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
-                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-                    } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
-                    }
+    
+                // 送信用の隠しフィールドを作成（これがないからスプレッドシートに飛ばなかった）
+                    const hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = name; // 「動画」や「face情報」という名前で送る
+                    hiddenInput.value = imgUrl; 
+                    g.appendChild(hiddenInput);
+
+                if (type === 'movie' && imgUrl) {
+                const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
+                    g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
+            } else if (imgUrl) {
+                const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
+            }
                     faceArea.appendChild(g);
-                    if (type === 'face' || type === 'movie') return;
-                }
+                if (type === 'face' || type === 'movie') return;
+            }
 
                 const group = document.createElement('div'); group.className = 'field-group';
                 if (imgUrl && name !== "ニックネーム") {
