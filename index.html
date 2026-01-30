@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Remote Therapist® Report System</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 30px; }
@@ -18,8 +19,6 @@
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         .limit-text { color: red; font-size: 12px; font-weight: normal; margin-left: 5px; }
-        
-        /* PDFビューワーとレポートフラグのスタイル */
         #pdf-viewer { width: 100%; height: 500px; border: 1px solid #ccc; margin-bottom: 20px; display: none; border-radius: 8px; }
         .report-status { color: red; font-weight: bold; margin-left: 10px; display: none; font-size: 14px; }
     </style>
@@ -37,7 +36,7 @@
                 <input type="email" id="search-email" placeholder="example@gmail.com">
                 <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
             </div>
-            <div id="loading">接続中...</div>
+            <div id="loading">接続中（GASを呼び出しています）...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -55,14 +54,15 @@
     </div>
 
     <script>
-        // --- 設定：GASのデプロイURLに差し替えてください ---
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbx4KrC76pBXbDb_xkoMbZdRofk699lu6sqHSM_-pfJH2rKxw3IWGZp2McrBBoXt4PKX/exec"; 
+        // --- 設定：最新のGASデプロイURLに差し替えてください ---
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbxLpaVq9vbJh9NbfJB75k6bGnEE9QMVbawx67YdolZiyxMB7BzMlfel8vCfkQzUs0_u/exec"; 
 
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
+                console.log("GAS Response:", data);
                 callback(data);
                 const el = document.getElementById(id);
                 if (el) document.body.removeChild(el);
@@ -71,15 +71,24 @@
             const script = document.createElement('script');
             script.id = id;
             const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-            script.src = GAS_URL + '?' + query + '&callback=' + id;
+            // URL結合の修正
+            const connector = GAS_URL.indexOf('?') > -1 ? '&' : '?';
+            script.src = GAS_URL + connector + query + '&callback=' + id;
+            script.onerror = () => {
+                document.getElementById('loading').innerText = "接続エラー：GASのURLまたは権限を確認してください。";
+            };
             document.body.appendChild(script);
         }
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                masterLists = data.lists;
-                functionLists = data.functionLists;
-                activityLists = data.activityLists;
+                if (!data || !data.config) {
+                    document.getElementById('loading').innerText = "データ取得失敗：シート構成を確認してください。";
+                    return;
+                }
+                masterLists = data.lists || [];
+                functionLists = data.functionLists || [];
+                activityLists = data.activityLists || [];
                 currentConfig = data.config;
                 render(data.config);
                 document.getElementById('loading').style.display = 'none';
@@ -97,15 +106,13 @@
                 let imgUrl = (overrideData && overrideData[name]) ? overrideData[name] : row[4];
 
                 if (!name || name === "項目名") return;
-
-                // PDFリンクなど入力不要な項目はスキップ（ただしデータとしては保持）
                 if (name === "PDFリンク") return;
 
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
                     if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop();
+                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
                         g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
                     } else if (imgUrl) {
                         const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
@@ -148,6 +155,7 @@
                 
                 input.name = name;
                 if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
+                if (overrideData && overrideData[name]) input.value = overrideData[name];
                 group.appendChild(input);
 
                 if (name.includes('計画書へ転記')) {
@@ -193,13 +201,12 @@
 
         function searchData() {
             const email = document.getElementById('search-email').value;
-            if (!email) return alert("アドレスを入力");
+            if (!email) return alert("アドレスを入力してください");
             callGAS({ action: 'find', email: email }, (res) => {
-                if (res.error === "なし") return alert("過去データなし");
+                if (!res.data) return alert("過去データが見つかりませんでした");
                 document.getElementById('rowNum').value = res.rowNum;
                 render(currentConfig, res.data);
 
-                // --- PDF表示ロジック ---
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = res.data["PDFリンク"];
@@ -212,19 +219,7 @@
                     pdfViewer.style.display = 'none';
                     reportFlag.style.display = 'none';
                 }
-
-                // 入力値セット（非同期連動対応）
-                const levels = [null, 'major', 'middle', 'minor'];
-                for (let lv of levels) {
-                    for (let key in res.data) {
-                        const els = document.getElementsByName(key);
-                        if (els.length > 0 && (els[0].dataset.lv || null) === lv) {
-                            els[0].value = res.data[key];
-                            if (els[0].tagName === 'SELECT') els[0].dispatchEvent(new Event('change'));
-                        }
-                    }
-                }
-                updateCount(); alert("読込完了");
+                updateCount(); alert("読込完了しました");
             });
         }
 
@@ -234,6 +229,7 @@
         }
 
         function getThumb(url) {
+            if(!url) return "";
             let id = (url.includes("/d/")) ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
             return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
         }
@@ -246,13 +242,18 @@
 
         function sendData() {
             const btn = document.querySelector('.btn-send');
+            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
+            
+            if(count === 0) {
+                if(!confirm("計画書への転記項目が選択されていませんが、送信しますか？")) return;
+            }
+
             btn.disabled = true;
             btn.innerText = "データ送信中...";
 
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             
-            // 入力欄がないメディア項目のみconfigのURLをセット
             currentConfig.forEach(row => {
                 const name = row[0];
                 const inputElement = document.getElementsByName(name)[0];
@@ -261,21 +262,22 @@
                 }
             });
 
-            // GASへ送信（バックグラウンド処理）
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) });
-
-            // 送信後のフィードバック表示
-            const fields = document.getElementById('fields');
-            fields.innerHTML = `
-                <div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;">
-                    <p>現在、データによるレポート作成中です。<br>しばらくしてから呼び出してください。</p>
-                    <p>3秒後にフォームに戻ります...</p>
-                </div>`;
-            btn.style.display = "none";
-
-            setTimeout(() => {
-                location.reload(); 
-            }, 4000);
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
+                const fields = document.getElementById('fields');
+                fields.innerHTML = `
+                    <div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;">
+                        <p>現在、レポート（PDF）を作成中です。<br>1分ほど待ってから「検索」するとPDFが表示されます。</p>
+                        <p>3秒後に画面をリロードします...</p>
+                    </div>`;
+                btn.style.display = "none";
+                setTimeout(() => { location.reload(); }, 4000);
+            })
+            .catch(err => {
+                alert("送信エラーが発生しました。");
+                btn.disabled = false;
+                btn.innerText = "報告を送信する";
+            });
         }
     </script>
 </body>
