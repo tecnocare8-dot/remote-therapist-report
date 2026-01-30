@@ -36,7 +36,7 @@
                 <input type="email" id="search-email" placeholder="example@gmail.com">
                 <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
             </div>
-            <div id="loading">接続中（GASを呼び出しています）...</div>
+            <div id="loading">接続中...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -54,7 +54,6 @@
     </div>
 
     <script>
-        // --- 設定：最新のGASデプロイURLに差し替えてください ---
         const GAS_URL = "https://script.google.com/macros/s/AKfycbztlCCEgrQ1_FQHixJR_kfvcuT2xD5kV0MUhkLRBi-Nqtk_FLTi_FFHXf69J95oThRA/exec"; 
 
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
@@ -62,7 +61,6 @@
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
-                console.log("GAS Response:", data);
                 callback(data);
                 const el = document.getElementById(id);
                 if (el) document.body.removeChild(el);
@@ -71,21 +69,13 @@
             const script = document.createElement('script');
             script.id = id;
             const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-            // URL結合の修正
             const connector = GAS_URL.indexOf('?') > -1 ? '&' : '?';
             script.src = GAS_URL + connector + query + '&callback=' + id;
-            script.onerror = () => {
-                document.getElementById('loading').innerText = "接続エラー：GASのURLまたは権限を確認してください。";
-            };
             document.body.appendChild(script);
         }
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                if (!data || !data.config) {
-                    document.getElementById('loading').innerText = "データ取得失敗：シート構成を確認してください。";
-                    return;
-                }
                 masterLists = data.lists || [];
                 functionLists = data.functionLists || [];
                 activityLists = data.activityLists || [];
@@ -105,8 +95,7 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3];
                 let imgUrl = (overrideData && overrideData[name]) ? overrideData[name] : row[4];
 
-                if (!name || name === "項目名") return;
-                if (name === "PDFリンク") return;
+                if (!name || name === "項目名" || name === "PDFリンク") return;
 
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
@@ -155,7 +144,6 @@
                 
                 input.name = name;
                 if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
-                if (overrideData && overrideData[name]) input.value = overrideData[name];
                 group.appendChild(input);
 
                 if (name.includes('計画書へ転記')) {
@@ -202,38 +190,65 @@
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力してください");
+            
             callGAS({ action: 'find', email: email }, (res) => {
                 if (!res.data) return alert("過去データが見つかりませんでした");
+                
                 document.getElementById('rowNum').value = res.rowNum;
-                render(currentConfig, res.data);
+                const data = res.data;
 
+                // 1. まず通常のinputとtextareaを埋める
+                document.querySelectorAll('#mainForm input, #mainForm textarea').forEach(el => {
+                    if (data[el.name] !== undefined) el.value = data[el.name];
+                });
+
+                // 2. selectを階層順に埋める
+                const icfGroups = [...new Set(Array.from(document.querySelectorAll('select[data-group]')).map(el => el.dataset.group))];
+                
+                icfGroups.forEach(groupName => {
+                    const major = document.querySelector(`select[data-group="${groupName}"][data-lv="major"]`);
+                    const middle = document.querySelector(`select[data-group="${groupName}"][data-lv="middle"]`);
+                    const minor = document.querySelector(`select[data-group="${groupName}"][data-lv="minor"]`);
+
+                    if (major && data[major.name]) {
+                        major.value = data[major.name];
+                        syncICF(major); // 中項目の選択肢を生成
+                        if (middle && data[middle.name]) {
+                            middle.value = data[middle.name];
+                            syncICF(middle); // 小項目の選択肢を生成
+                            if (minor && data[minor.name]) {
+                                minor.value = data[minor.name];
+                            }
+                        }
+                    }
+                });
+
+                // 通常の単独セレクトボックス
+                document.querySelectorAll('select:not([data-group])').forEach(el => {
+                    if (data[el.name] !== undefined) el.value = data[el.name];
+                });
+
+                // PDF表示
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
-                const pdfUrl = res.data["PDFリンク"];
+                const pdfUrl = data["PDFリンク"];
                 if (pdfUrl) {
                     const previewUrl = pdfUrl.replace("/view?usp=drivesdk", "/preview").replace("/view", "/preview");
                     pdfViewer.src = previewUrl;
                     pdfViewer.style.display = 'block';
                     reportFlag.style.display = 'inline';
-                } else {
-                    pdfViewer.style.display = 'none';
-                    reportFlag.style.display = 'none';
                 }
-                updateCount(); alert("読込完了しました");
+
+                updateCount();
+                alert("読込完了しました");
             });
         }
 
-       function updateCount() {
-    // 値が「転記する」と一致するものだけを抽出してカウント
-    const count = Array.from(document.querySelectorAll('.count-target'))
-        .filter(t => t.value === "転記する").length;
-    
-    document.querySelectorAll('.counter').forEach(el => {
-        el.innerText = count + " / 3 選択済み";
-        // 3つを超えた場合に色を変えるなどの視覚的フィードバックも可能
-        el.style.color = count > 3 ? "red" : "#1a73e8";
-    });
-}
+        function updateCount() {
+            const count = Array.from(document.querySelectorAll('.count-target'))
+                .filter(t => t.value === "転記する").length;
+            document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
+        }
 
         function getThumb(url) {
             if(!url) return "";
@@ -249,41 +264,17 @@
 
         function sendData() {
             const btn = document.querySelector('.btn-send');
-            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value !== "").length;
-            
-            if(count === 0) {
-                if(!confirm("計画書への転記項目が選択されていませんが、送信しますか？")) return;
-            }
-
             btn.disabled = true;
             btn.innerText = "データ送信中...";
 
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             
-            currentConfig.forEach(row => {
-                const name = row[0];
-                const inputElement = document.getElementsByName(name)[0];
-                if (!inputElement && row[4]) {
-                    payload[name] = row[4];
-                }
-            });
-
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
             .then(() => {
                 const fields = document.getElementById('fields');
-                fields.innerHTML = `
-                    <div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;">
-                        <p>現在、レポート（PDF）を作成中です。<br>1分ほど待ってから「検索」するとPDFが表示されます。</p>
-                        <p>3秒後に画面をリロードします...</p>
-                    </div>`;
-                btn.style.display = "none";
-                setTimeout(() => { location.reload(); }, 4000);
-            })
-            .catch(err => {
-                alert("送信エラーが発生しました。");
-                btn.disabled = false;
-                btn.innerText = "報告を送信する";
+                fields.innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了。レポート作成中です。</p></div>`;
+                setTimeout(() => { location.reload(); }, 3000);
             });
         }
     </script>
