@@ -132,7 +132,7 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     let src = 'master';
-                    if (name.includes('参加') || name.includes('活動')) src = 'activity';
+                    if (type.includes('activity_')) src = 'activity';
                     else if (type.includes('function_')) src = 'function';
                     input.dataset.source = src;
                     input.dataset.lv = type.split('_')[1];
@@ -191,28 +191,16 @@
         }
 
         /**
-         * 【以前の挙動を再現】コード部分（a123など）だけを見て強制一致させるロジック
+         * 【以前の挙動を再現】コード部分（p620など）だけを見て強制一致させるロジック
          */
         async function waitAndSet(element, value) {
             if (!value) return;
-            
-            // スペースや(その他)を削ってコード部分を抽出 (例: a6201)
-            const match = String(value).match(/[a-p]\d{2,5}/i);
-            const code = match ? match[0].toLowerCase() : null;
+            const codeMatch = String(value).match(/[a-p]\d{2,5}/i);
+            const code = codeMatch ? codeMatch[0].toLowerCase() : null;
 
             for (let i = 0; i < 30; i++) { 
                 const options = Array.from(element.options);
-                let targetOption = null;
-
-                if (code) {
-                    // プルダウンの選択肢の中からコードが含まれるものを探す
-                    targetOption = options.find(o => o.value.toLowerCase().includes(code));
-                }
-
-                // コードで見つからない場合は完全一致で探す
-                if (!targetOption) {
-                    targetOption = options.find(o => o.value.trim() === String(value).trim());
-                }
+                let targetOption = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === String(value).trim());
 
                 if (targetOption) {
                     element.value = targetOption.value;
@@ -231,7 +219,6 @@
             });
 
             const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-            
             for (let g of groups) {
                 const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                 const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
@@ -268,18 +255,18 @@
             });
         }
 
-        async function loadFromStorage() {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (!saved) return;
-            await applyDataWithLag(JSON.parse(saved));
-        }
-
         function saveToStorage() {
             const formData = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             const status = document.getElementById('save-status');
             status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
+        }
+
+        async function loadFromStorage() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return;
+            await applyDataWithLag(JSON.parse(saved));
         }
 
         function updateCount() {
@@ -304,18 +291,11 @@
             btn.disabled = true; btn.innerText = "データ送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            
-            fetch(GAS_URL, { 
-                method: "POST", 
-                mode: "no-cors", 
-                body: JSON.stringify(payload) 
-            }).then(() => {
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
                 localStorage.removeItem(STORAGE_KEY);
                 document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p><p>4秒後にリロードします。</p></div>`;
                 setTimeout(() => { location.reload(); }, 4000);
-            }).catch(e => {
-                alert("送信エラー。再試行してください。");
-                btn.disabled = false;
             });
         }
     </script>
