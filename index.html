@@ -19,7 +19,6 @@
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 500px; border: 1px solid #ccc; margin-bottom: 20px; display: none; border-radius: 8px; }
-        .save-info { font-size: 12px; color: #28a745; text-align: center; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
@@ -39,7 +38,6 @@
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
-                <div id="save-status" class="save-info">✔ 入力内容を一時保存しました</div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
         </div>
@@ -48,19 +46,21 @@
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
             <h3>Face情報</h3>
+            <div id="pdf-link-area" style="margin-bottom:20px;"></div>
             <iframe id="pdf-viewer"></iframe>
             <div id="face-img-area"></div>
         </div>
     </div>
 
     <script>
+        // 指定のGASデプロイURL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
-        const STORAGE_KEY = "rt_report_temp";
+        
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
-        // JSONPによる通信（認証不要）
+        // GAS通信用（JSONP）
         function callGAS(params, callback) {
-            const id = 'jsonp_' + Date.now();
+            const id = 'jsonp_' + Date.now() + Math.floor(Math.random() * 1000);
             window[id] = (data) => {
                 callback(data);
                 const el = document.getElementById(id);
@@ -83,7 +83,6 @@
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
-                loadFromStorage();
             });
         };
 
@@ -93,24 +92,9 @@
             fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // Face / Movie情報（画像・動画）
-                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
-                    const g = document.createElement('div'); g.style.marginBottom = "25px";
-                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
-                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-                    } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
-                    }
-                    faceArea.appendChild(g);
-                    if (type === 'face' || type === 'movie') return;
-                }
-
-                // フォーム項目生成
                 const group = document.createElement('div'); group.className = 'field-group';
                 if (imgUrl && name !== "ニックネーム") {
                     const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
@@ -124,17 +108,15 @@
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = name.includes('参加') || name.includes('活動') ? 'activity' : (type.includes('function_') ? 'function' : 'master');
-                    input.onchange = (e) => { syncICF(e.target); saveToStorage(); };
+                    input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
-                    input.oninput = saveToStorage;
-                } else if (type === 'select' || options.length > 0) {
+                } else if (type === 'select') {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
+                    const options = row[2] ? String(row[2]).split(',') : [];
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                    input.onchange = saveToStorage;
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
-                    input.oninput = saveToStorage;
                 }
                 input.name = name;
                 group.appendChild(input);
@@ -144,12 +126,27 @@
                     input.onchange = updateCount;
                 }
                 fieldsDiv.appendChild(group);
+
+                // Faceタブ用
+                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
+                    const g = document.createElement('div'); g.style.marginBottom = "25px";
+                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
+                    if (type === 'movie' && imgUrl) {
+                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
+                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
+                    } else if (imgUrl) {
+                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
+                    }
+                    faceArea.appendChild(g);
+                }
             });
             initICF();
         }
 
         function getListBySource(src) {
-            return src === 'activity' ? activityLists : (src === 'function' ? functionLists : masterLists);
+            if (src === 'activity') return activityLists;
+            if (src === 'function') return functionLists;
+            return masterLists;
         }
 
         function initICF() {
@@ -177,69 +174,63 @@
             }
         }
 
-        // 保存値と選択肢をコード(p620等)で照合してセット
-        function matchAndSet(element, value) {
+        // 文字列照合ロジック：コード(p620等)が含まれていれば一致とみなす
+        function setSelectValue(element, value) {
             if (!value || !element) return false;
-            const code = (value.match(/[a-p]\d{2,5}/i) || [null])[0];
+            const code = (value.match(/[a-p]\d{1,5}/i) || [null])[0];
             const options = Array.from(element.options);
-            const target = options.find(o => code ? o.value.toLowerCase().includes(code.toLowerCase()) : o.value.trim() === value.trim());
+            const target = options.find(o => code ? o.value.includes(code) : o.value.trim() === value.trim());
             if (target) {
                 element.value = target.value;
-                syncICF(element);
+                syncICF(element); // 連動を走らせる
                 return true;
             }
             return false;
-        }
-
-        function applyData(data) {
-            // 通常項目の復元
-            document.querySelectorAll('#mainForm [name]').forEach(el => {
-                if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-            });
-
-            // 階層項目の復元（イベント不要・同期処理）
-            const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-            groups.forEach(g => {
-                const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-                const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-
-                if (major && data[major.name] && matchAndSet(major, data[major.name])) {
-                    if (middle && data[middle.name] && matchAndSet(middle, data[middle.name])) {
-                        if (minor && data[minor.name]) matchAndSet(minor, data[minor.name]);
-                    }
-                }
-            });
-            updateCount();
         }
 
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力してください");
             callGAS({ action: 'find', email: email }, (res) => {
-                if (!res.data) return alert("過去データが見つかりません");
+                if (!res || !res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
-                applyData(res.data);
-                const pdfViewer = document.getElementById('pdf-viewer');
-                if (res.data["PDFリンク"]) {
-                    pdfViewer.src = res.data["PDFリンク"].replace("/view", "/preview");
-                    pdfViewer.style.display = 'block';
+                const data = res.data;
+
+                // 1. 通常項目のセット
+                document.querySelectorAll('#mainForm [name]').forEach(el => {
+                    if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+                });
+
+                // 2. 階層項目を同期処理でセット（大→中→小）
+                const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
+                groups.forEach(g => {
+                    const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+                    const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+
+                    if (major && data[major.name]) {
+                        if (setSelectValue(major, data[major.name])) {
+                            if (middle && data[middle.name]) {
+                                if (setSelectValue(middle, data[middle.name])) {
+                                    if (minor && data[minor.name]) {
+                                        setSelectValue(minor, data[minor.name]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // PDF表示
+                if (data["PDFリンク"]) {
+                    const url = data["PDFリンク"].replace("/view", "/preview");
+                    document.getElementById('pdf-link-area').innerHTML = `<a href="${url}" target="_blank" style="color:#1a73e8; font-weight:bold;">別窓でPDFを開く</a>`;
+                    document.getElementById('pdf-viewer').src = url;
+                    document.getElementById('pdf-viewer').style.display = 'block';
                 }
+                updateCount();
                 alert("読み込み完了");
             });
-        }
-
-        function saveToStorage() {
-            const formData = {};
-            document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-            const status = document.getElementById('save-status');
-            status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
-        }
-
-        function loadFromStorage() {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) applyData(JSON.parse(saved));
         }
 
         function updateCount() {
@@ -261,14 +252,13 @@
 
         function sendData() {
             const btn = document.querySelector('.btn-send');
-            btn.disabled = true; btn.innerText = "データ送信中...";
+            btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
             .then(() => {
-                localStorage.removeItem(STORAGE_KEY);
-                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p><p>4秒後にリロードします。</p></div>`;
-                setTimeout(() => { location.reload(); }, 4000);
+                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p></div>`;
+                setTimeout(() => { location.reload(); }, 3000);
             });
         }
     </script>
