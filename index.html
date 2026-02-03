@@ -71,8 +71,16 @@
             };
             const script = document.createElement('script');
             script.id = id;
-            const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-            script.src = GAS_URL + (GAS_URL.indexOf('?') > -1 ? '&' : '?') + query + '&callback=' + id;
+            
+            // --- ここから修正 ---
+            const queryParams = new URLSearchParams(params);
+            queryParams.append('callback', id);
+            
+            // URLにすでに?が含まれているかチェックして結合
+            const separator = GAS_URL.includes('?') ? '&' : '?';
+            script.src = GAS_URL + separator + queryParams.toString();
+            // --- ここまで修正 ---
+            
             document.body.appendChild(script);
         }
 
