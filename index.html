@@ -18,7 +18,7 @@
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
-        #pdf-viewer { width: 100%; height: 500px; border: 1px solid #ccc; margin-bottom: 20px; display: none; border-radius: 8px; }
+        #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
     </style>
 </head>
 <body>
@@ -46,21 +46,17 @@
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
             <h3>Face情報</h3>
-            <div id="pdf-link-area" style="margin-bottom:20px;"></div>
             <iframe id="pdf-viewer"></iframe>
             <div id="face-img-area"></div>
         </div>
     </div>
 
     <script>
-        // 指定のGASデプロイURL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
-        
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
-        // GAS通信用（JSONP）
         function callGAS(params, callback) {
-            const id = 'jsonp_' + Date.now() + Math.floor(Math.random() * 1000);
+            const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
                 callback(data);
                 const el = document.getElementById(id);
@@ -95,10 +91,22 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                const group = document.createElement('div'); group.className = 'field-group';
-                if (imgUrl && name !== "ニックネーム") {
-                    const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
+                // Face/Movie情報は「Face情報」タブへ
+                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
+                    const g = document.createElement('div'); g.style.marginBottom = "25px";
+                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
+                    if (type === 'movie' && imgUrl) {
+                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
+                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
+                    } else if (imgUrl) {
+                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
+                    }
+                    faceArea.appendChild(g);
+                    if (type === 'face' || type === 'movie') return; // 入力フォームには出さない
                 }
+
+                // 入力フォーム用
+                const group = document.createElement('div'); group.className = 'field-group';
                 const lbl = document.createElement('label'); lbl.innerText = name;
                 group.appendChild(lbl);
 
@@ -107,7 +115,8 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
-                    input.dataset.source = name.includes('参加') || name.includes('活動') ? 'activity' : (type.includes('function_') ? 'function' : 'master');
+                    // 参加、活動、機能の判定を強化
+                    input.dataset.source = (name.includes('参加') || name.includes('活動')) ? 'activity' : (name.includes('機能') ? 'function' : 'master');
                     input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
@@ -126,19 +135,6 @@
                     input.onchange = updateCount;
                 }
                 fieldsDiv.appendChild(group);
-
-                // Faceタブ用
-                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
-                    const g = document.createElement('div'); g.style.marginBottom = "25px";
-                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
-                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-                    } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
-                    }
-                    faceArea.appendChild(g);
-                }
             });
             initICF();
         }
@@ -174,15 +170,14 @@
             }
         }
 
-        // 文字列照合ロジック：コード(p620等)が含まれていれば一致とみなす
-        function setSelectValue(element, value) {
+        function matchAndSet(element, value) {
             if (!value || !element) return false;
             const code = (value.match(/[a-p]\d{1,5}/i) || [null])[0];
             const options = Array.from(element.options);
             const target = options.find(o => code ? o.value.includes(code) : o.value.trim() === value.trim());
             if (target) {
                 element.value = target.value;
-                syncICF(element); // 連動を走らせる
+                syncICF(element);
                 return true;
             }
             return false;
@@ -190,43 +185,38 @@
 
         function searchData() {
             const email = document.getElementById('search-email').value;
-            if (!email) return alert("アドレスを入力してください");
+            if (!email) return alert("アドレスを入力");
             callGAS({ action: 'find', email: email }, (res) => {
                 if (!res || !res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
-                // 1. 通常項目のセット
+                // 通常項目
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // 2. 階層項目を同期処理でセット（大→中→小）
+                // 階層項目（大→中→小を同期連動）
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 groups.forEach(g => {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-                    if (major && data[major.name]) {
-                        if (setSelectValue(major, data[major.name])) {
-                            if (middle && data[middle.name]) {
-                                if (setSelectValue(middle, data[middle.name])) {
-                                    if (minor && data[minor.name]) {
-                                        setSelectValue(minor, data[minor.name]);
-                                    }
-                                }
-                            }
+                    if (major && data[major.name] && matchAndSet(major, data[major.name])) {
+                        if (middle && data[middle.name] && matchAndSet(middle, data[middle.name])) {
+                            if (minor && data[minor.name]) matchAndSet(minor, data[minor.name]);
                         }
                     }
                 });
 
-                // PDF表示
+                // PDFをそのまま貼り付け表示
+                const viewer = document.getElementById('pdf-viewer');
                 if (data["PDFリンク"]) {
-                    const url = data["PDFリンク"].replace("/view", "/preview");
-                    document.getElementById('pdf-link-area').innerHTML = `<a href="${url}" target="_blank" style="color:#1a73e8; font-weight:bold;">別窓でPDFを開く</a>`;
-                    document.getElementById('pdf-viewer').src = url;
-                    document.getElementById('pdf-viewer').style.display = 'block';
+                    viewer.src = data["PDFリンク"].replace("/view", "/preview");
+                    viewer.style.display = 'block';
+                } else {
+                    viewer.style.display = 'none';
                 }
                 updateCount();
                 alert("読み込み完了");
