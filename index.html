@@ -56,43 +56,32 @@
     </div>
 
     <script>
-    // 【重要】新しいデプロイ後のURLをここに貼る
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyMU1Ev7CKi81Elat7eW7mnKCrcPl9X-kg3xSuCCEELQK0uiG_riXcXoSx7EZQPirnY/exec"; 
+        // 【重要】新しいデプロイ後のURLをここに貼る
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyMU1Ev7CKi81Elat7eW7mnKCrcPl9X-kg3xSuCCEELQK0uiG_riXcXoSx7EZQPirnY/exec"; 
+        const STORAGE_KEY = "rt_report_temp";
+        let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
-    function callGAS(params, callback) {
-        const id = 'jsonp_' + Date.now();
-        window[id] = (data) => {
-            callback(data);
-            const el = document.getElementById(id);
-            if (el) document.body.removeChild(el);
-            delete window[id];
-        };
-        const script = document.createElement('script');
-        script.id = id;
-        
-        // URL組み立ての修正
-        const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-        const separator = GAS_URL.indexOf('?') > -1 ? '&' : '?';
-        script.src = `${GAS_URL}${separator}${query}&callback=${id}`;
-        
-        script.onerror = () => {
-            alert("GASへの接続に失敗しました。URLまたは権限を確認してください。");
-            document.getElementById('loading').innerText = "接続失敗";
-        };
-        document.body.appendChild(script);
-    }
-
-    // window.onload などの他の部分は既存のままでOKです
-　</script>  
-            // --- ここから修正 ---
+        function callGAS(params, callback) {
+            const id = 'jsonp_' + Date.now();
+            window[id] = (data) => {
+                callback(data);
+                const el = document.getElementById(id);
+                if (el) document.body.removeChild(el);
+                delete window[id];
+            };
+            const script = document.createElement('script');
+            script.id = id;
+            
+            // 安全なURL組み立て
             const queryParams = new URLSearchParams(params);
             queryParams.append('callback', id);
-            
-            // URLにすでに?が含まれているかチェックして結合
             const separator = GAS_URL.includes('?') ? '&' : '?';
             script.src = GAS_URL + separator + queryParams.toString();
-            // --- ここまで修正 ---
             
+            script.onerror = () => {
+                alert("GAS接続エラー。デプロイ設定（全員）を確認してください。");
+                document.getElementById('loading').innerText = "接続失敗";
+            };
             document.body.appendChild(script);
         }
 
@@ -101,12 +90,10 @@
                 masterLists = data.lists || [];
                 functionLists = data.functionLists || [];
                 activityLists = data.activityLists || [];
-                currentConfig = data.config;
-                render(data.config);
+                currentConfig = data.config || [];
+                render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
-                
-                // 初回ロード後に一時保存データを復元
                 loadFromStorage();
             });
         };
@@ -122,16 +109,11 @@
 
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // --- 画像・動画項目の特殊処理（hidden追加） ---
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-
-                    // GASにURLを送るための隠しフィールド
                     const hiddenInput = document.createElement('input');
-                    hiddenInput.type = 'hidden';
-                    hiddenInput.name = name;
-                    hiddenInput.value = imgUrl || ""; 
+                    hiddenInput.type = 'hidden'; hiddenInput.name = name; hiddenInput.value = imgUrl || ""; 
                     g.appendChild(hiddenInput);
 
                     if (type === 'movie' && imgUrl) {
@@ -148,7 +130,6 @@
                 if (imgUrl && name !== "ニックネーム") {
                     const img = document.createElement('img'); img.src = getThumb(imgUrl); group.appendChild(img);
                 }
-
                 const lbl = document.createElement('label'); lbl.innerText = name;
                 if (maxLen && !isNaN(maxLen)) {
                     const span = document.createElement('span'); span.className = 'limit-text';
@@ -174,7 +155,6 @@
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                     input.oninput = saveToStorage;
                 }
-                
                 input.name = name;
                 if (maxLen && !isNaN(maxLen)) input.maxLength = maxLen;
                 group.appendChild(input);
@@ -188,7 +168,6 @@
             initICF();
         }
 
-        // --- ICF階層連動ロジック ---
         function getListBySource(src) {
             return src === 'function' ? functionLists : (src === 'activity' ? activityLists : masterLists);
         }
@@ -218,60 +197,42 @@
             }
         }
 
-        // --- データの検索と呼び出し ---
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力してください");
-            
             callGAS({ action: 'find', email: email }, (res) => {
                 if (!res.data) return alert("過去データが見つかりませんでした");
-                
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
-
-                // 入力欄にセット
                 document.querySelectorAll('#mainForm input, #mainForm textarea, #mainForm select').forEach(el => {
                     if (data[el.name] !== undefined) {
                         el.value = data[el.name];
                         if (el.dataset.lv === "major" || el.dataset.lv === "middle") syncICF(el);
                     }
                 });
-
-                // PDFリンクをFaceタブにセット
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = data["PDFリンク"];
                 if (pdfUrl) {
                     const previewUrl = pdfUrl.replace("/view?usp=drivesdk", "/preview").replace("/view", "/preview");
-                    pdfViewer.src = previewUrl;
-                    pdfViewer.style.display = 'block';
-                    reportFlag.style.display = 'inline';
+                    pdfViewer.src = previewUrl; pdfViewer.style.display = 'block'; reportFlag.style.display = 'inline';
                 }
-
-                updateCount();
-                saveToStorage(); // 検索結果も一時保存対象にする
-                alert("過去データを読み込みました。Faceタブでレポートを確認できます。");
+                updateCount(); saveToStorage(); alert("読み込み完了");
             });
         }
 
-        // --- 一時保存（Local Storage）機能 ---
         function saveToStorage() {
             const formData = {};
-            document.querySelectorAll('#mainForm [name]').forEach(el => {
-                formData[el.name] = el.value;
-            });
+            document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-            
             const status = document.getElementById('save-status');
-            status.style.display = 'block';
-            setTimeout(() => { status.style.display = 'none'; }, 2000);
+            status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
         }
 
         function loadFromStorage() {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (!saved) return;
             const data = JSON.parse(saved);
-            
             document.querySelectorAll('#mainForm input, #mainForm textarea, #mainForm select').forEach(el => {
                 if (data[el.name] !== undefined) {
                     el.value = data[el.name];
@@ -300,20 +261,13 @@
 
         function sendData() {
             const btn = document.querySelector('.btn-send');
-            btn.disabled = true; btn.innerText = "データ送信・PDF作成中...";
-
+            btn.disabled = true; btn.innerText = "データ送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
             .then(() => {
-                localStorage.removeItem(STORAGE_KEY); // 送信成功時のみ一時保存を消去
-                document.getElementById('fields').innerHTML = `
-                    <div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;">
-                        <p>送信完了しました！</p>
-                        <p>現在バックエンドでV${Number(payload.rowNum ? 2 : 1)}レポートを作成中です。</p>
-                        <p>数秒後に自動でリロードします。</p>
-                    </div>`;
+                localStorage.removeItem(STORAGE_KEY);
+                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p><p>4秒後にリロードします。</p></div>`;
                 setTimeout(() => { location.reload(); }, 4000);
             });
         }
