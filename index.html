@@ -16,7 +16,6 @@
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        .counter { color: #1a73e8; font-weight: bold; text-align: right; margin-top: 8px; font-size: 14px; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
     </style>
@@ -53,7 +52,9 @@
 
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
-        let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
+        
+        // 変数名をスプレッドシートのシート名（スネークケース）に完全一致させました
+        let lists = [], activity_lists = [], function_lists = [], currentConfig = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -72,9 +73,10 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                masterLists = data.lists || [];
-                functionLists = data.functionLists || [];
-                activityLists = data.activityLists || [];
+                // GAS側から返るプロパティ名もスネークケースであることを想定
+                lists = data.lists || [];
+                activity_lists = data.activity_lists || [];
+                function_lists = data.function_lists || [];
                 currentConfig = data.config || [];
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
@@ -88,10 +90,10 @@
             fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), imgUrl = row[4];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // Face/Movie情報は「Face情報」タブへ
+                // Face/MovieはFaceタブのみ
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -102,10 +104,9 @@
                         const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
                     }
                     faceArea.appendChild(g);
-                    if (type === 'face' || type === 'movie') return; // 入力フォームには出さない
+                    if (type === 'face' || type === 'movie') return;
                 }
 
-                // 入力フォーム用
                 const group = document.createElement('div'); group.className = 'field-group';
                 const lbl = document.createElement('label'); lbl.innerText = name;
                 group.appendChild(lbl);
@@ -115,34 +116,28 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
-                    // 参加、活動、機能の判定を強化
-                    input.dataset.source = (name.includes('参加') || name.includes('活動')) ? 'activity' : (name.includes('機能') ? 'function' : 'master');
+                    // 型名(B列)から参照ソースを決定
+                    input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
-                } else if (type === 'select') {
+                } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
-                    const options = row[2] ? String(row[2]).split(',') : [];
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
                 input.name = name;
                 group.appendChild(input);
-
-                if (name.includes('計画書へ転記')) {
-                    input.classList.add('count-target'); 
-                    input.onchange = updateCount;
-                }
                 fieldsDiv.appendChild(group);
             });
             initICF();
         }
 
         function getListBySource(src) {
-            if (src === 'activity') return activityLists;
-            if (src === 'function') return functionLists;
-            return masterLists;
+            if (src === 'activity') return activity_lists;
+            if (src === 'function') return function_lists;
+            return lists;
         }
 
         function initICF() {
@@ -162,19 +157,24 @@
 
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.filter(r => r[0] === target.value).map(r => r[1]))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
+                const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
+                [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
+                middle.dispatchEvent(new Event('options-ready'));
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => r[0] === major.value && r[1] === target.value).forEach(r => { if(r[2]) minor.add(new Option(r[2], r[2])); });
+                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
+                    .forEach(r => { if(r[2]) minor.add(new Option(r[2], r[2])); });
+                minor.dispatchEvent(new Event('options-ready'));
             }
         }
 
         function matchAndSet(element, value) {
             if (!value || !element) return false;
-            const code = (value.match(/[a-p]\d{1,5}/i) || [null])[0];
+            const codeMatch = String(value).match(/[a-p]\d{1,5}/i);
+            const code = codeMatch ? codeMatch[0].toLowerCase() : null;
             const options = Array.from(element.options);
-            const target = options.find(o => code ? o.value.includes(code) : o.value.trim() === value.trim());
+            const target = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === value.trim());
             if (target) {
                 element.value = target.value;
                 syncICF(element);
@@ -196,36 +196,40 @@
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // 階層項目（大→中→小を同期連動）
-                const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
+                // 階層項目 (イベント連動)
+                const selects = Array.from(document.querySelectorAll('select[data-lv]'));
+                const groups = [...new Set(selects.map(el => el.dataset.group))];
                 groups.forEach(g => {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-                    if (major && data[major.name] && matchAndSet(major, data[major.name])) {
-                        if (middle && data[middle.name] && matchAndSet(middle, data[middle.name])) {
-                            if (minor && data[minor.name]) matchAndSet(minor, data[minor.name]);
+                    if (major && data[major.name]) {
+                        matchAndSet(major, data[major.name]);
+                        if (middle && data[middle.name]) {
+                            const onMid = () => {
+                                matchAndSet(middle, data[middle.name]);
+                                middle.removeEventListener('options-ready', onMid);
+                                if (minor && data[minor.name]) {
+                                    const onMin = () => {
+                                        matchAndSet(minor, data[minor.name]);
+                                        minor.removeEventListener('options-ready', onMin);
+                                    };
+                                    minor.addEventListener('options-ready', onMin);
+                                }
+                            };
+                            middle.addEventListener('options-ready', onMid);
                         }
                     }
                 });
 
-                // PDFをそのまま貼り付け表示
-                const viewer = document.getElementById('pdf-viewer');
                 if (data["PDFリンク"]) {
+                    const viewer = document.getElementById('pdf-viewer');
                     viewer.src = data["PDFリンク"].replace("/view", "/preview");
                     viewer.style.display = 'block';
-                } else {
-                    viewer.style.display = 'none';
                 }
-                updateCount();
                 alert("読み込み完了");
             });
-        }
-
-        function updateCount() {
-            const count = Array.from(document.querySelectorAll('.count-target')).filter(t => t.value === "転記する").length;
-            document.querySelectorAll('.counter').forEach(el => el.innerText = count + " / 3 選択済み");
         }
 
         function getThumb(url) {
@@ -248,7 +252,7 @@
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
             .then(() => {
                 document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p></div>`;
-                setTimeout(() => { location.reload(); }, 3000);
+                setTimeout(() => { location.reload(); }, 2500);
             });
         }
     </script>
