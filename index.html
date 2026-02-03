@@ -80,7 +80,7 @@
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
-                setTimeout(updateTotalCount, 300);
+                setTimeout(updateTotalCount, 500);
             });
         };
 
@@ -115,7 +115,7 @@
                 let input;
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
-                    // 参加長期１_ICF大 などから正確にグループを抽出
+                    // 田中様指定の正規項目名から正確にグループを切り出し
                     input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
@@ -128,6 +128,7 @@
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+                    // 「計画書へ転記」のトリガーを明示的にセット
                     input.addEventListener('change', updateTotalCount);
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
@@ -157,38 +158,36 @@
         }
 
         function updateTotalCount() {
-            let currentTotal = 0;
+            let total = 0;
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
             const max = limitRow ? parseInt(limitRow[3]) : 3;
 
-            // 「計画書へ転記」のすべてのセレクトを対象にカウント
-            const allTenki = document.querySelectorAll('select[name*="計画書へ転記"]');
-            allTenki.forEach(sel => {
-                const baseName = sel.name.replace('_計画書へ転記', '');
-                // 課題、またはICF小が入力されているかチェック
-                const taskSel = document.querySelector(`[name="${baseName}_課題"]`) || 
-                                document.querySelector(`[name="${baseName}_ICF小"]`);
+            // 転記フラグを持つ全てのセレクトボックスを走査
+            const tenkiSelects = document.querySelectorAll('select[name*="計画書へ転記"]');
+            tenkiSelects.forEach(sel => {
+                const base = sel.name.replace('_計画書へ転記', '');
+                // ICF小 または 課題 の入力をチェック
+                const target = document.querySelector(`[name="${base}_ICF小"]`) || 
+                               document.querySelector(`[name="${base}_課題"]`);
                 
-                if (sel.value === "転記する" && taskSel && taskSel.value && taskSel.value !== "-- 選択 --" && taskSel.value !== "") {
-                    currentTotal++;
+                if (sel.value === "転記する" && target && target.value && target.value !== "-- 選択 --" && target.value !== "") {
+                    total++;
                 }
             });
 
-            // 転記するを選択している項目の下にカウントと色を表示
-            allTenki.forEach(sel => {
+            tenkiSelects.forEach(sel => {
                 const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
                     if (sel.value === "転記する") {
-                        guide.innerText = `${currentTotal} / ${max} 選択中`;
-                        guide.className = currentTotal > max ? 'count-guide count-red' : 'count-guide count-blue';
+                        guide.innerText = `${total} / ${max} 選択中`;
+                        guide.className = total > max ? 'count-guide count-red' : 'count-guide count-blue';
                     } else {
                         guide.innerText = "0 / 3 選択中";
                         guide.className = 'count-guide count-blue';
                     }
                 }
             });
-
-            if (currentTotal > max) alert(`最大${max}件までです。現在: ${currentTotal}件`);
+            if (total > max) alert(`計画書転記の上限は${max}件です。現在: ${total}件`);
         }
 
         function getListBySource(src) {
@@ -246,9 +245,8 @@
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // ICF連動：参加長期１ などの全角名称も含めて正確に反映
-                const icfSelects = Array.from(document.querySelectorAll('select[data-lv="major"]'));
-                for (const major of icfSelects) {
+                const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
+                for (const major of icfMajors) {
                     const g = major.dataset.group;
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
@@ -284,7 +282,7 @@
                         selectEl.value = val;
                         clearInterval(itv);
                         resolve();
-                    } else if (count > 40) { clearInterval(itv); resolve(); }
+                    } else if (count > 30) { clearInterval(itv); resolve(); }
                     count++;
                 }, 100);
             });
