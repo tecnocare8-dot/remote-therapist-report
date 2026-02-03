@@ -43,6 +43,12 @@
         </div>
     </div>
 
+    <div id="tab-face" class="tab-content" style="display:none;">
+        <div class="container">
+            <div id="face-img-area"></div>
+        </div>
+    </div>
+
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzo5FCtqC5OyMflNl6flKrDivPev96rfGjOVVyaBQujQZCKx_FamR_tnxhCtrj2fy5O/exec"; 
         let currentConfig = [], lists = [], function_lists = [], activity_lists = [];
@@ -77,12 +83,31 @@
 
         function render(config) {
             const fieldsDiv = document.getElementById('fields');
-            fieldsDiv.innerHTML = '';
+            const faceArea = document.getElementById('face-img-area');
+            fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
+                // --- Face情報タブへの隔離 ---
+                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
+                    const g = document.createElement('div'); g.style.marginBottom = "25px";
+                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
+                    if (type === 'movie' && imgUrl) {
+                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
+                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
+                    } else if (imgUrl) {
+                        const img = document.createElement('img'); img.src = getThumb(imgUrl);
+                        img.style.width = "100%"; img.style.borderRadius = "8px";
+                        img.onerror = () => { img.style.display='none'; };
+                        g.appendChild(img);
+                    }
+                    faceArea.appendChild(g);
+                    if (type === 'face' || type === 'movie') return;
+                }
+
+                // --- 入力フォーム生成 ---
                 const group = document.createElement('div'); group.className = 'field-group';
                 group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
@@ -142,14 +167,14 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                // A列（index 0）を大項目として取得
-                [...new Set(list.slice(1).map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
+                // slice(1)を削除し、全行をデータとして扱う
+                [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
             const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
-            const list = getListBySource(src).slice(1);
+            const list = getListBySource(src); // slice(1)を削除
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
@@ -157,7 +182,6 @@
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const val = String(target.value).trim();
-                // A列が一致する行のB列（index 1）を取得
                 const filtered = list.filter(r => String(r[0]).trim() === val);
                 [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
@@ -165,7 +189,6 @@
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
                 const majVal = String(major.value).trim();
                 const midVal = String(target.value).trim();
-                // A列とB列が一致する行のC列（index 2）を取得
                 list.filter(r => String(r[0]).trim() === majVal && String(r[1]).trim() === midVal)
                     .forEach(r => { if(r[2]) minor.add(new Option(String(r[2]).trim(), String(r[2]).trim())); });
             }
@@ -213,6 +236,11 @@
                     count++;
                 }, 100);
             });
+        }
+
+        function getThumb(url) {
+            const id = url ? url.match(/[-\w]{25,}/) : null;
+            return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
         }
 
         function switchTab(id, btn) {
