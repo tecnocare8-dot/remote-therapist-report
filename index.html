@@ -18,6 +18,7 @@
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
+        .btn-send:disabled { background: #ccc; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -37,7 +38,7 @@
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
-                <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
+                <button type="button" id="submitBtn" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
         </div>
     </div>
@@ -51,10 +52,10 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbw3GYO4KS-kN9sYwM3IjMj4kBMJOQ4RX-Kp1fb_Y8E4iJEi4eI49AZm0WPYImZkpt3t/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzO5_l5thBARfCEhmRVRzCfF843IG7EgjmK9Bpb3G2mlo5t-pyQPDiYqCnVKykSb0Vr/exec"; 
         
-        // GASのdoGet内、initアクションで定義されたプロパティ名に合わせました
-        let lists = [], functionLists = [], activityLists = [], currentConfig = [];
+        // GAS側の doInit 戻り値プロパティ名に完全に一致させました
+        let lists = [], function_lists = [], activity_lists = [], currentConfig = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -73,9 +74,10 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
+                // アンダースコア区切りに修正
                 lists = data.lists || [];
-                functionLists = data.functionLists || [];
-                activityLists = data.activityLists || [];
+                function_lists = data.function_lists || [];
+                activity_lists = data.activity_lists || [];
                 currentConfig = data.config || [];
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
@@ -92,7 +94,7 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // face / movie は Face情報タブのみ
+                // face / movie などの表示処理
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -115,7 +117,7 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
-                    // 型設定(B列)から参照ソースを固定
+                    // データソース判定をGASプロパティ名に修正
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
@@ -134,8 +136,8 @@
         }
 
         function getListBySource(src) {
-            if (src === 'activity') return activityLists;
-            if (src === 'function') return functionLists;
+            if (src === 'activity') return activity_lists;
+            if (src === 'function') return function_lists;
             return lists;
         }
 
@@ -143,7 +145,8 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.map(r => r[0]))].filter(v => v).forEach(v => el.add(new Option(v, v)));
+                const uniqueValues = [...new Set(list.map(r => r[0]))].filter(v => v);
+                uniqueValues.forEach(v => el.add(new Option(v, v)));
             });
         }
 
@@ -170,10 +173,8 @@
 
         function matchAndSet(element, value) {
             if (!value || !element) return false;
-            const codeMatch = String(value).match(/[a-p]\d{1,5}/i);
-            const code = codeMatch ? codeMatch[0].toLowerCase() : null;
             const options = Array.from(element.options);
-            const target = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === value.trim());
+            const target = options.find(o => o.value.trim() === String(value).trim());
             if (target) {
                 element.value = target.value;
                 syncICF(element);
@@ -190,12 +191,13 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
+                // 通常フィールドの埋め込み
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                const selects = Array.from(document.querySelectorAll('select[data-lv]'));
-                const groups = [...new Set(selects.map(el => el.dataset.group))];
+                // ICF連動セレクトボックスの埋め込み
+                const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 groups.forEach(g => {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
@@ -203,20 +205,18 @@
 
                     if (major && data[major.name]) {
                         matchAndSet(major, data[major.name]);
-                        if (middle && data[middle.name]) {
-                            const onMid = () => {
+                        const onMid = () => {
+                            if (middle && data[middle.name]) {
                                 matchAndSet(middle, data[middle.name]);
-                                middle.removeEventListener('options-ready', onMid);
-                                if (minor && data[minor.name]) {
-                                    const onMin = () => {
-                                        matchAndSet(minor, data[minor.name]);
-                                        minor.removeEventListener('options-ready', onMin);
-                                    };
-                                    minor.addEventListener('options-ready', onMin);
-                                }
-                            };
-                            middle.addEventListener('options-ready', onMid);
-                        }
+                                const onMin = () => {
+                                    if (minor && data[minor.name]) matchAndSet(minor, data[minor.name]);
+                                    minor.removeEventListener('options-ready', onMin);
+                                };
+                                minor?.addEventListener('options-ready', onMin);
+                            }
+                            middle.removeEventListener('options-ready', onMid);
+                        };
+                        middle?.addEventListener('options-ready', onMid);
                     }
                 });
 
@@ -241,16 +241,26 @@
             document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
         }
 
-        function sendData() {
-            const btn = document.querySelector('.btn-send');
+        async function sendData() {
+            const btn = document.getElementById('submitBtn');
             btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => {
-                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p></div>`;
+            
+            try {
+                await fetch(GAS_URL, { 
+                    method: "POST", 
+                    mode: "no-cors", 
+                    body: JSON.stringify(payload),
+                    headers: { "Content-Type": "text/plain" }
+                });
+                // no-cors のため成功判定は例外が出ないことで代用
+                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！<br>PDF生成を開始しました。</p></div>`;
                 setTimeout(() => { location.reload(); }, 2500);
-            });
+            } catch (e) {
+                alert("送信エラー: " + e.message);
+                btn.disabled = false; btn.innerText = "報告を送信する";
+            }
         }
     </script>
 </body>
