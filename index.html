@@ -18,9 +18,12 @@
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
         
-        /* 田中様指示のスタイル */
+        /* ガイド表示用スタイル */
         .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
-        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; }
+        /* 初期は青文字、上限超過で赤文字にJSで動的変更 */
+        .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
+        .count-blue { color: blue; }
+        .count-red { color: red; }
     </style>
 </head>
 <body>
@@ -92,6 +95,7 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
+                // ニックネーム・Face表示（初期順序遵守）
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -117,16 +121,16 @@
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
-                    input.onchange = (e) => {
+                    input.addEventListener('change', (e) => {
                         syncICF(e.target);
                         updateTotalCount();
-                    };
+                    });
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                    input.onchange = () => { updateTotalCount(); };
+                    input.addEventListener('change', updateTotalCount);
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
@@ -134,16 +138,17 @@
                 input.name = name;
                 group.appendChild(input);
 
+                // 文字数ガイド表示（赤字）
                 if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
-                    const guide = document.createElement('div');
-                    guide.className = 'limit-guide';
+                    const guide = document.createElement('div'); guide.className = 'limit-guide';
                     guide.innerText = `文字数上限 ${limit} 文字`;
                     group.appendChild(guide);
                 }
 
+                // 選択数カウント領域（青字初期表示：0/3）
                 if (name.includes('計画書へ転記')) {
                     const countGuide = document.createElement('div');
-                    countGuide.className = 'count-guide';
+                    countGuide.className = 'count-guide count-blue';
                     countGuide.id = `guide-${name}`;
                     group.appendChild(countGuide);
                 }
@@ -151,7 +156,7 @@
                 fieldsDiv.appendChild(group);
             });
             initICF();
-            updateTotalCount();
+            updateTotalCount(); // 初期表示 0/3 を実行
         }
 
         function updateTotalCount() {
@@ -163,6 +168,7 @@
             targetGroups.forEach(g => {
                 const tenki = document.querySelector(`[name="${g}_計画書へ転記"]`);
                 const task = document.querySelector(`[name="${g}_課題"]`);
+                // 転記するかつ、課題が空でない場合にカウント
                 if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "" && task.value !== "-- 選択 --") {
                     currentTotal++;
                 }
@@ -174,6 +180,12 @@
                 if (guide) {
                     if (tenki && tenki.value === "転記する") {
                         guide.innerText = `${currentTotal} / ${max} 選択中`;
+                        // 3件を超えたら赤字、それ以下は青字
+                        if (currentTotal > max) {
+                            guide.className = 'count-guide count-red';
+                        } else {
+                            guide.className = 'count-guide count-blue';
+                        }
                     } else {
                         guide.innerText = "";
                     }
@@ -193,8 +205,8 @@
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => {
-                    const cleanV = String(v).trim();
-                    el.add(new Option(cleanV, cleanV));
+                    const cv = String(v).trim();
+                    el.add(new Option(cv, cv));
                 });
             });
         }
@@ -211,16 +223,16 @@
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === val);
                 [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => {
-                    const cleanV = String(v).trim();
-                    middle.add(new Option(cleanV, cleanV));
+                    const cv = String(v).trim();
+                    middle.add(new Option(cv, cv));
                 });
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === val)
                     .forEach(r => { if(r[2]) {
-                        const cleanV = String(r[2]).trim();
-                        minor.add(new Option(cleanV, cleanV));
+                        const cv = String(r[2]).trim();
+                        minor.add(new Option(cv, cv));
                     }});
             }
         }
@@ -233,10 +245,12 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
+                // 通常フィールド
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
+                // ICF連動：大→中→小を強制発火で再現
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 for (const g of groups) {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -244,20 +258,13 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                     if (major && data[major.name]) {
-                        const majorVal = String(data[major.name]).trim();
-                        major.value = majorVal;
-                        syncICF(major);
-                        await waitForOptions(middle, majorVal);
+                        major.value = String(data[major.name]).trim();
+                        syncICF(major); // 中項目を生成
+                        await pollForValue(middle, String(data[middle.name]).trim());
 
-                        if (middle && data[middle.name]) {
-                            const middleVal = String(data[middle.name]).trim();
-                            middle.value = middleVal;
-                            syncICF(middle);
-                            await waitForOptions(minor, middleVal);
-
-                            if (minor && data[minor.name]) {
-                                minor.value = String(data[minor.name]).trim();
-                            }
+                        if (middle && middle.value && data[minor.name]) {
+                            syncICF(middle); // 小項目を生成
+                            await pollForValue(minor, String(data[minor.name]).trim());
                         }
                     }
                 }
@@ -271,16 +278,20 @@
             });
         }
 
-        function waitForOptions(selectEl, targetValue) {
+        function pollForValue(selectEl, targetValue) {
             return new Promise((resolve) => {
-                let attempts = 0;
-                const interval = setInterval(() => {
-                    const options = Array.from(selectEl.options).map(o => o.value);
-                    if (options.includes(targetValue) || attempts > 20) {
-                        clearInterval(interval);
+                let count = 0;
+                const itv = setInterval(() => {
+                    const opts = Array.from(selectEl.options).map(o => o.value);
+                    if (opts.includes(targetValue)) {
+                        selectEl.value = targetValue;
+                        clearInterval(itv);
+                        resolve();
+                    } else if (count > 30) { // 最大3秒
+                        clearInterval(itv);
                         resolve();
                     }
-                    attempts++;
+                    count++;
                 }, 100);
             });
         }
@@ -303,10 +314,7 @@
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => {
-                alert("送信完了");
-                location.reload();
-            });
+            .then(() => { alert("送信完了"); location.reload(); });
         }
     </script>
 </body>
