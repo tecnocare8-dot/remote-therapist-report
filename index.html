@@ -51,10 +51,10 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw3GYO4KS-kN9sYwM3IjMj4kBMJOQ4RX-Kp1fb_Y8E4iJEi4eI49AZm0WPYImZkpt3t/exec"; 
         
-        // 変数名をスプレッドシートのシート名（スネークケース）に完全一致させました
-        let lists = [], activity_lists = [], function_lists = [], currentConfig = [];
+        // GASのdoGet内、initアクションで定義されたプロパティ名に合わせました
+        let lists = [], functionLists = [], activityLists = [], currentConfig = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -73,10 +73,9 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                // GAS側から返るプロパティ名もスネークケースであることを想定
                 lists = data.lists || [];
-                activity_lists = data.activity_lists || [];
-                function_lists = data.function_lists || [];
+                functionLists = data.functionLists || [];
+                activityLists = data.activityLists || [];
                 currentConfig = data.config || [];
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
@@ -93,7 +92,7 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // Face/MovieはFaceタブのみ
+                // face / movie は Face情報タブのみ
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -116,7 +115,7 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
-                    // 型名(B列)から参照ソースを決定
+                    // 型設定(B列)から参照ソースを固定
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => syncICF(e.target);
                 } else if (type === 'textarea') {
@@ -135,8 +134,8 @@
         }
 
         function getListBySource(src) {
-            if (src === 'activity') return activity_lists;
-            if (src === 'function') return function_lists;
+            if (src === 'activity') return activityLists;
+            if (src === 'function') return functionLists;
             return lists;
         }
 
@@ -191,12 +190,10 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
-                // 通常項目
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // 階層項目 (イベント連動)
                 const selects = Array.from(document.querySelectorAll('select[data-lv]'));
                 const groups = [...new Set(selects.map(el => el.dataset.group))];
                 groups.forEach(g => {
