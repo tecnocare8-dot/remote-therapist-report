@@ -56,17 +56,12 @@
     </div>
 
     <script>
-        // 指定いただいた最新のGASデプロイURL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
         const STORAGE_KEY = "rt_report_temp";
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
-        // 階層呼び出し用の待機プロミス
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        /**
-         * GASとの通信（JSONP）
-         */
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
@@ -77,15 +72,8 @@
             };
             const script = document.createElement('script');
             script.id = id;
-            
-            // パラメータ組み立て（URL結合の修正）
             const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
             script.src = `${GAS_URL}?${query}&callback=${id}`;
-            
-            script.onerror = () => {
-                alert("GAS通信に失敗しました。URLまたはデプロイ設定を確認してください。");
-                document.getElementById('loading').innerText = "接続エラー";
-            };
             document.body.appendChild(script);
         }
 
@@ -110,10 +98,8 @@
             config.forEach(row => {
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3];
                 let imgUrl = (overrideData && overrideData[name]) ? overrideData[name] : row[4];
-
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // 画像・動画項目の処理
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -205,25 +191,51 @@
         }
 
         /**
-         * 階層を順番に（ラグを持って）復元する
+         * 【修正】プルダウンの中に値が出現するのを待ってからセットする
          */
+        async function waitAndSet(element, value) {
+            if (!value) return;
+            // 最大2秒間、選択肢の中にターゲットの値が出てくるのを待つ
+            for (let i = 0; i < 20; i++) { 
+                const options = Array.from(element.options).map(o => o.value);
+                if (options.includes(String(value))) {
+                    element.value = value;
+                    syncICF(element); // 次の階層の生成をトリガー
+                    return true;
+                }
+                await sleep(100); // 100msずつ再試行
+            }
+            console.warn("Option not found for: " + element.name + " value: " + value);
+            return false;
+        }
+
         async function applyDataWithLag(data) {
-            // 1. 通常項目
+            // 通常項目の復元
             document.querySelectorAll('#mainForm [name]').forEach(el => {
                 if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
             });
 
-            // 2. 階層項目 (大 -> 中 -> 小)
-            const levels = ['major', 'middle', 'minor'];
-            for (let lv of levels) {
-                const els = document.querySelectorAll(`select[data-lv="${lv}"]`);
-                els.forEach(el => {
-                    if (data[el.name] !== undefined) {
-                        el.value = data[el.name];
-                        syncICF(el);
+            // 階層項目の復元（大->中->小）
+            const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
+            
+            for (let g of groups) {
+                const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+                const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+
+                // 大項目をセット
+                if (major && data[major.name]) {
+                    major.value = data[major.name];
+                    syncICF(major);
+                    // 中項目が生成されるのを待ってセット
+                    if (middle && data[middle.name]) {
+                        await waitAndSet(middle, data[middle.name]);
+                        // 小項目が生成されるのを待ってセット
+                        if (minor && data[minor.name]) {
+                            await waitAndSet(minor, data[minor.name]);
+                        }
                     }
-                });
-                await sleep(350); // 階層生成のための待機ラグ
+                }
             }
             updateCount();
         }
@@ -235,7 +247,6 @@
                 if (!res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
                 await applyDataWithLag(res.data);
-
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = res.data["PDFリンク"];
@@ -247,18 +258,18 @@
             });
         }
 
+        async function loadFromStorage() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return;
+            await applyDataWithLag(JSON.parse(saved));
+        }
+
         function saveToStorage() {
             const formData = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             const status = document.getElementById('save-status');
             status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
-        }
-
-        async function loadFromStorage() {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (!saved) return;
-            await applyDataWithLag(JSON.parse(saved));
         }
 
         function updateCount() {
