@@ -11,7 +11,6 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
@@ -19,9 +18,8 @@
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
         
-        /* 追記：ガイドメッセージ用スタイル */
         .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
-        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; }
+        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
     </style>
 </head>
 <body>
@@ -56,7 +54,6 @@
 
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzO5_l5thBARfCEhmRVRzCfF843IG7EgjmK9Bpb3G2mlo5t-pyQPDiYqCnVKykSb0Vr/exec"; 
-        
         let lists = [], function_lists = [], activity_lists = [], currentConfig = [];
 
         function callGAS(params, callback) {
@@ -102,8 +99,7 @@
                         const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
                         g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
                     } else if (imgUrl) {
-                        const img = document.createElement('img'); 
-                        img.src = getThumb(imgUrl);
+                        const img = document.createElement('img'); img.src = getThumb(imgUrl);
                         img.onerror = () => { img.style.display='none'; };
                         g.appendChild(img);
                     }
@@ -121,16 +117,16 @@
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
-                    input.onchange = (e) => {
+                    input.addEventListener('change', (e) => {
                         syncICF(e.target);
                         updateCountDisplay();
-                    };
+                    });
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                    input.onchange = () => { updateCountDisplay(); };
+                    input.addEventListener('change', updateCountDisplay);
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
@@ -138,16 +134,13 @@
                 input.name = name;
                 group.appendChild(input);
 
-                // 文字数上限の表示（赤字）
                 if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
                     input.maxLength = limit;
-                    const guide = document.createElement('div');
-                    guide.className = 'limit-guide';
+                    const guide = document.createElement('div'); guide.className = 'limit-guide';
                     guide.innerText = `文字数上限 ${limit} 文字`;
                     group.appendChild(guide);
                 }
 
-                // 選択数カウントの表示領域（青字）
                 if (name.includes('計画書へ転記')) {
                     const countGuide = document.createElement('div');
                     countGuide.className = 'count-guide';
@@ -161,38 +154,35 @@
             updateCountDisplay();
         }
 
-        // 選択数のリアルタイムカウントと表示
         function updateCountDisplay() {
             const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
-            let selectedCount = 0;
+            let totalSelected = 0;
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
             const maxLimit = limitRow ? parseInt(limitRow[3]) : 3;
 
+            // 1パス目：合計を計算
             targetGroups.forEach(group => {
                 const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
                 const task = document.querySelector(`[name="${group}_課題"]`);
-                const guide = document.getElementById(`count-guide-${group}_計画書へ転記`);
-                
-                let isCounted = false;
                 if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "" && task.value !== "-- 選択 --") {
-                    selectedCount++;
-                    isCounted = true;
+                    totalSelected++;
                 }
+            });
 
-                // 表示の更新
+            // 2パス目：表示を更新
+            targetGroups.forEach(group => {
+                const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
+                const guide = document.getElementById(`count-guide-${group}_計画書へ転記`);
                 if (guide) {
                     if (tenki && tenki.value === "転記する") {
-                        guide.innerText = `現在 ${selectedCount} / ${maxLimit} 選択中`;
-                        guide.style.display = 'block';
+                        guide.innerText = `${totalSelected} / ${maxLimit} 選択中`;
                     } else {
-                        guide.style.display = 'none';
+                        guide.innerText = "";
                     }
                 }
             });
 
-            if (selectedCount > maxLimit) {
-                alert(`「計画書へ転記」は最大${maxLimit}件までです。現在: ${selectedCount}件`);
-            }
+            if (totalSelected > maxLimit) alert(`最大${maxLimit}件までです。現在: ${totalSelected}件`);
         }
 
         function getListBySource(src) {
@@ -206,8 +196,8 @@
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => {
-                    const cleanV = String(v).trim();
-                    el.add(new Option(cleanV, cleanV));
+                    const cv = String(v).trim();
+                    el.add(new Option(cv, cv));
                 });
             });
         }
@@ -218,23 +208,22 @@
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-
-            const targetVal = String(target.value).trim();
+            const val = String(target.value).trim();
 
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = list.filter(r => String(r[0]).trim() === targetVal);
+                const filtered = list.filter(r => String(r[0]).trim() === val);
                 [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => {
-                    const cleanV = String(v).trim();
-                    middle.add(new Option(cleanV, cleanV));
+                    const cv = String(v).trim();
+                    middle.add(new Option(cv, cv));
                 });
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === targetVal)
+                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === val)
                     .forEach(r => { if(r[2]) {
-                        const cleanV = String(r[2]).trim();
-                        minor.add(new Option(cleanV, cleanV));
+                        const cv = String(r[2]).trim();
+                        minor.add(new Option(cv, cv));
                     }});
             }
         }
@@ -247,10 +236,12 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
+                // 通常フィールド
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
+                // 連動セレクトボックスの順次反映
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 for (const g of groups) {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -258,42 +249,41 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                     if (major && data[major.name]) {
-                        const majorVal = String(data[major.name]).trim();
-                        major.value = majorVal;
+                        major.value = String(data[major.name]).trim();
                         syncICF(major);
-                        await waitForOptions(middle);
+                        await pollForValue(middle, String(data[middle.name]).trim());
 
-                        if (middle && data[middle.name]) {
-                            const middleVal = String(data[middle.name]).trim();
-                            middle.value = middleVal;
+                        if (middle && middle.value && data[minor.name]) {
                             syncICF(middle);
-                            await waitForOptions(minor);
-
-                            if (minor && data[minor.name]) {
-                                minor.value = String(data[minor.name]).trim();
-                            }
+                            await pollForValue(minor, String(data[minor.name]).trim());
                         }
                     }
                 }
                 updateCountDisplay();
                 if (data["PDFリンク"]) {
-                    const viewer = document.getElementById('pdf-viewer');
-                    viewer.src = data["PDFリンク"].replace("/view", "/preview");
-                    viewer.style.display = 'block';
+                    const v = document.getElementById('pdf-viewer');
+                    v.src = data["PDFリンク"].replace("/view", "/preview");
+                    v.style.display = 'block';
                 }
                 alert("読み込み完了");
             });
         }
 
-        function waitForOptions(selectEl) {
+        // 小項目などがDOMに出現するまで粘り強く待機してセットする
+        function pollForValue(selectEl, targetValue) {
             return new Promise((resolve) => {
-                let attempts = 0;
-                const interval = setInterval(() => {
-                    attempts++;
-                    if (selectEl.options.length > 1 || attempts > 20) {
-                        clearInterval(interval);
+                let count = 0;
+                const itv = setInterval(() => {
+                    const opts = Array.from(selectEl.options).map(o => o.value);
+                    if (opts.includes(targetValue)) {
+                        selectEl.value = targetValue;
+                        clearInterval(itv);
+                        resolve();
+                    } else if (count > 20) { // 最大2秒
+                        clearInterval(itv);
                         resolve();
                     }
+                    count++;
                 }, 100);
             });
         }
@@ -315,10 +305,8 @@
             btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => {
-                alert("送信完了");
-                location.reload();
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) }).then(() => {
+                alert("送信完了"); location.reload();
             });
         }
     </script>
