@@ -57,7 +57,7 @@
 
     <script>
         // 【重要】新しいデプロイ後のURLをここに貼る
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbyMU1Ev7CKi81Elat7eW7mnKCrcPl9X-kg3xSuCCEELQK0uiG_riXcXoSx7EZQPirnY/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
         const STORAGE_KEY = "rt_report_temp";
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
@@ -71,15 +71,12 @@
             };
             const script = document.createElement('script');
             script.id = id;
-            
-            // 安全なURL組み立て
             const queryParams = new URLSearchParams(params);
             queryParams.append('callback', id);
             const separator = GAS_URL.includes('?') ? '&' : '?';
             script.src = GAS_URL + separator + queryParams.toString();
-            
             script.onerror = () => {
-                alert("GAS接続エラー。デプロイ設定（全員）を確認してください。");
+                alert("GAS接続エラー。権限設定を確認してください。");
                 document.getElementById('loading').innerText = "接続失敗";
             };
             document.body.appendChild(script);
@@ -115,7 +112,6 @@
                     const hiddenInput = document.createElement('input');
                     hiddenInput.type = 'hidden'; hiddenInput.name = name; hiddenInput.value = imgUrl || ""; 
                     g.appendChild(hiddenInput);
-
                     if (type === 'movie' && imgUrl) {
                         const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
                         g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
@@ -141,7 +137,12 @@
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
-                    input.dataset.source = type.includes('function_') ? 'function' : (type.includes('activity_') ? 'activity' : 'master');
+                    // 参加・機能・通常マスタの自動判定
+                    let src = 'master';
+                    if (name.includes('参加')) src = 'activity';
+                    else if (type.includes('function_')) src = 'function';
+                    
+                    input.dataset.source = src;
                     input.dataset.lv = type.split('_')[1];
                     input.onchange = (e) => { syncICF(e.target); saveToStorage(); };
                 } else if (type === 'textarea') {
@@ -169,7 +170,9 @@
         }
 
         function getListBySource(src) {
-            return src === 'function' ? functionLists : (src === 'activity' ? activityLists : masterLists);
+            if (src === 'activity') return activityLists;
+            if (src === 'function') return functionLists;
+            return masterLists;
         }
 
         function initICF() {
@@ -189,11 +192,11 @@
 
             if (lv === 'major' && middleEl) {
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.filter(r => r[0] === target.value).map(r => r[1]))].filter(v => v).forEach(v => middleEl.add(new Option(v, v)));
+                [...new Set(list.filter(r => String(r[0]) === String(target.value)).map(r => r[1]))].filter(v => v).forEach(v => middleEl.add(new Option(v, v)));
                 if(minorEl) minorEl.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => r[0] === majorEl.value && r[1] === target.value).forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
+                list.filter(r => String(r[0]) === String(majorEl.value) && String(r[1]) === String(target.value)).forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
             }
         }
 
@@ -204,12 +207,23 @@
                 if (!res.data) return alert("過去データが見つかりませんでした");
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
-                document.querySelectorAll('#mainForm input, #mainForm textarea, #mainForm select').forEach(el => {
-                    if (data[el.name] !== undefined) {
-                        el.value = data[el.name];
-                        if (el.dataset.lv === "major" || el.dataset.lv === "middle") syncICF(el);
-                    }
+                
+                // 階層項目（大・中・小）を順番に復元
+                const lvOrder = ['major', 'middle', 'minor'];
+                // まず通常項目
+                document.querySelectorAll('#mainForm [name]').forEach(el => {
+                    if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
+                // 次に階層項目を連動させながら復元
+                lvOrder.forEach(lv => {
+                    document.querySelectorAll(`select[data-lv="${lv}"]`).forEach(el => {
+                        if (data[el.name] !== undefined) {
+                            el.value = data[el.name];
+                            syncICF(el);
+                        }
+                    });
+                });
+
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = data["PDFリンク"];
@@ -233,11 +247,17 @@
             const saved = localStorage.getItem(STORAGE_KEY);
             if (!saved) return;
             const data = JSON.parse(saved);
-            document.querySelectorAll('#mainForm input, #mainForm textarea, #mainForm select').forEach(el => {
-                if (data[el.name] !== undefined) {
-                    el.value = data[el.name];
-                    if (el.dataset.lv === "major" || el.dataset.lv === "middle") syncICF(el);
-                }
+            const lvOrder = ['major', 'middle', 'minor'];
+            document.querySelectorAll('#mainForm [name]').forEach(el => {
+                if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+            });
+            lvOrder.forEach(lv => {
+                document.querySelectorAll(`select[data-lv="${lv}"]`).forEach(el => {
+                    if (data[el.name] !== undefined) {
+                        el.value = data[el.name];
+                        syncICF(el);
+                    }
+                });
             });
             updateCount();
         }
