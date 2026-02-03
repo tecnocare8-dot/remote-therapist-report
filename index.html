@@ -20,6 +20,8 @@
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
         .count-blue { color: blue; }
         .count-red { color: red; }
+        /* PDFビューワー用スタイル */
+        .pdf-viewer { width: 100%; height: 500px; border: 1px solid #ccc; border-radius: 8px; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -46,6 +48,11 @@
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
+            <div id="pdf-area" style="margin-bottom: 30px; display:none;">
+                <label style="color:#d93025; margin-bottom:10px;">【最新の作成済みPDF】</label>
+                <iframe id="pdf-frame" class="pdf-viewer" src=""></iframe>
+            </div>
+            <hr>
             <div id="face-img-area"></div>
         </div>
     </div>
@@ -91,7 +98,6 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // --- 1. Face情報タブへの隔離 ---
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -108,7 +114,6 @@
                     if (type === 'face' || type === 'movie') return;
                 }
 
-                // --- 2. 報告入力フォームの生成 ---
                 const group = document.createElement('div'); group.className = 'field-group';
                 group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
@@ -133,7 +138,6 @@
                 input.name = name;
                 group.appendChild(input);
 
-                // 文字数上限表示の復元
                 if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
                     const guide = document.createElement('div');
                     guide.className = 'limit-guide';
@@ -174,7 +178,6 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                // スライスせずに1行目から読み込むことで「買い物」を救出
                 [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
         }
@@ -208,6 +211,21 @@
                 if (!res || !res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
+
+                // PDFリンクの呼び出しとビューワーへのセット
+                const pdfArea = document.getElementById('pdf-area');
+                const pdfFrame = document.getElementById('pdf-frame');
+                if (data["PDFリンク"]) {
+                    // 共有リンクをプレビュー用URLに変換
+                    const pdfId = data["PDFリンク"].match(/[-\w]{25,}/);
+                    if (pdfId) {
+                        pdfFrame.src = `https://drive.google.com/file/d/${pdfId[0]}/preview`;
+                        pdfArea.style.display = 'block';
+                    }
+                } else {
+                    pdfArea.style.display = 'none';
+                }
+
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
@@ -227,7 +245,7 @@
                     }
                 }
                 updateTotalCount();
-                alert("読み込み完了");
+                alert("読み込み完了（Face情報タブでPDFを確認できます）");
             });
         }
 
