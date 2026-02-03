@@ -60,8 +60,6 @@
         const STORAGE_KEY = "rt_report_temp";
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
@@ -132,7 +130,7 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     let src = 'master';
-                    if (type.includes('activity_')) src = 'activity';
+                    if (name.includes('参加') || name.includes('活動')) src = 'activity';
                     else if (type.includes('function_')) src = 'function';
                     input.dataset.source = src;
                     input.dataset.lv = type.split('_')[1];
@@ -184,66 +182,89 @@
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.filter(r => String(r[0]) === String(target.value)).map(r => r[1]))].filter(v => v).forEach(v => middleEl.add(new Option(v, v)));
                 if(minorEl) minorEl.innerHTML = '<option value="">-- 選択 --</option>';
+                // カスタムイベントを発火させて連動を通知
+                middleEl.dispatchEvent(new Event('options-ready'));
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]) === String(majorEl.value) && String(r[1]) === String(target.value)).forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
+                // カスタムイベントを発火
+                minorEl.dispatchEvent(new Event('options-ready'));
             }
         }
 
         /**
-         * 【以前の挙動を再現】コード部分（p620など）だけを見て強制一致させるロジック
+         * 【以前の挙動を再現】
+         * 値をセットし、かつ選択肢にコード(a123等)が含まれるものを優先して選ぶ
          */
-        async function waitAndSet(element, value) {
-            if (!value) return;
+        function forceSetValue(element, value) {
+            if (!value || !element) return;
             const codeMatch = String(value).match(/[a-p]\d{2,5}/i);
             const code = codeMatch ? codeMatch[0].toLowerCase() : null;
-
-            for (let i = 0; i < 30; i++) { 
-                const options = Array.from(element.options);
-                let targetOption = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === String(value).trim());
-
-                if (targetOption) {
-                    element.value = targetOption.value;
-                    syncICF(element);
-                    return true;
-                }
-                await sleep(150);
+            const options = Array.from(element.options);
+            
+            let targetOption = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === String(value).trim());
+            
+            if (targetOption) {
+                element.value = targetOption.value;
+                syncICF(element);
+                return true;
             }
-            console.warn("Option not found: " + element.name + " [" + value + "]");
             return false;
         }
 
-        async function applyDataWithLag(data) {
+        /**
+         * 【核心】再帰的な階層復元ロジック
+         * 待機時間ではなく、階層が整ったイベントをトリガーにする
+         */
+        function restoreHierarchy(data) {
+            // 1. 通常項目の復元
             document.querySelectorAll('#mainForm [name]').forEach(el => {
                 if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
             });
 
+            // 2. 階層項目の復元（各グループの大項目から開始）
             const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-            for (let g of groups) {
+            
+            groups.forEach(g => {
                 const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                 const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                 const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                 if (major && data[major.name]) {
-                    await waitAndSet(major, data[major.name]);
+                    // 大項目をセット
+                    forceSetValue(major, data[major.name]);
+
+                    // 中項目の選択肢が用意できたらセット
                     if (middle && data[middle.name]) {
-                        await waitAndSet(middle, data[middle.name]);
-                        if (minor && data[minor.name]) {
-                            await waitAndSet(minor, data[minor.name]);
-                        }
+                        const onMiddleReady = () => {
+                            if (forceSetValue(middle, data[middle.name])) {
+                                middle.removeEventListener('options-ready', onMiddleReady);
+                                // 小項目の選択肢が用意できたらセット
+                                if (minor && data[minor.name]) {
+                                    const onMinorReady = () => {
+                                        forceSetValue(minor, data[minor.name]);
+                                        minor.removeEventListener('options-ready', onMinorReady);
+                                        updateCount();
+                                    };
+                                    minor.addEventListener('options-ready', onMinorReady);
+                                }
+                            }
+                        };
+                        middle.addEventListener('options-ready', onMiddleReady);
                     }
                 }
-            }
-            updateCount();
+            });
         }
 
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力");
-            callGAS({ action: 'find', email: email }, async (res) => {
+            callGAS({ action: 'find', email: email }, (res) => {
                 if (!res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
-                await applyDataWithLag(res.data);
+                
+                restoreHierarchy(res.data);
+
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = res.data["PDFリンク"];
@@ -255,18 +276,18 @@
             });
         }
 
+        function loadFromStorage() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return;
+            restoreHierarchy(JSON.parse(saved));
+        }
+
         function saveToStorage() {
             const formData = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             const status = document.getElementById('save-status');
             status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
-        }
-
-        async function loadFromStorage() {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (!saved) return;
-            await applyDataWithLag(JSON.parse(saved));
         }
 
         function updateCount() {
