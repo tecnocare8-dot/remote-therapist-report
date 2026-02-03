@@ -56,10 +56,12 @@
     </div>
 
     <script>
-        // 【重要】新しいデプロイ後のURLをここに貼る
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxH2-7LXtjz6MP_p0NQdrPo2id4akRI6wVd14boF52rzsJitRO0Xi62EpTTb9VkKT3M/exec"; 
         const STORAGE_KEY = "rt_report_temp";
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
+
+        // 待機用プロミス
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -75,10 +77,6 @@
             queryParams.append('callback', id);
             const separator = GAS_URL.includes('?') ? '&' : '?';
             script.src = GAS_URL + separator + queryParams.toString();
-            script.onerror = () => {
-                alert("GAS接続エラー。権限設定を確認してください。");
-                document.getElementById('loading').innerText = "接続失敗";
-            };
             document.body.appendChild(script);
         }
 
@@ -103,7 +101,6 @@
             config.forEach(row => {
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], maxLen = row[3];
                 let imgUrl = (overrideData && overrideData[name]) ? overrideData[name] : row[4];
-
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
@@ -137,11 +134,9 @@
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
-                    // 参加・機能・通常マスタの自動判定
                     let src = 'master';
                     if (name.includes('参加')) src = 'activity';
                     else if (type.includes('function_')) src = 'function';
-                    
                     input.dataset.source = src;
                     input.dataset.lv = type.split('_')[1];
                     input.onchange = (e) => { syncICF(e.target); saveToStorage(); };
@@ -200,66 +195,65 @@
             }
         }
 
+        // --- 【核心】ラグを持たせたデータ復元処理 ---
+        async function applyDataWithLag(data) {
+            const lvOrder = ['major', 'middle', 'minor'];
+            
+            // 1. 通常項目
+            document.querySelectorAll('#mainForm [name]').forEach(el => {
+                if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+            });
+
+            // 2. 階層項目をラグ付きで復元
+            for (let lv of lvOrder) {
+                const elements = document.querySelectorAll(`select[data-lv="${lv}"]`);
+                elements.forEach(el => {
+                    if (data[el.name] !== undefined) {
+                        el.value = data[el.name];
+                        syncICF(el); // 次の階層のプルダウンを作成
+                    }
+                });
+                await sleep(300); // プルダウン生成とDOM反映のために300ms待機
+            }
+            updateCount();
+        }
+
         function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力してください");
-            callGAS({ action: 'find', email: email }, (res) => {
+            document.getElementById('loading').style.display = 'block'; // 復元中も「接続中」を出す
+            
+            callGAS({ action: 'find', email: email }, async (res) => {
+                document.getElementById('loading').style.display = 'none';
                 if (!res.data) return alert("過去データが見つかりませんでした");
                 document.getElementById('rowNum').value = res.rowNum;
-                const data = res.data;
                 
-                // 階層項目（大・中・小）を順番に復元
-                const lvOrder = ['major', 'middle', 'minor'];
-                // まず通常項目
-                document.querySelectorAll('#mainForm [name]').forEach(el => {
-                    if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-                });
-                // 次に階層項目を連動させながら復元
-                lvOrder.forEach(lv => {
-                    document.querySelectorAll(`select[data-lv="${lv}"]`).forEach(el => {
-                        if (data[el.name] !== undefined) {
-                            el.value = data[el.name];
-                            syncICF(el);
-                        }
-                    });
-                });
+                await applyDataWithLag(res.data);
 
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
-                const pdfUrl = data["PDFリンク"];
+                const pdfUrl = res.data["PDFリンク"];
                 if (pdfUrl) {
                     const previewUrl = pdfUrl.replace("/view?usp=drivesdk", "/preview").replace("/view", "/preview");
                     pdfViewer.src = previewUrl; pdfViewer.style.display = 'block'; reportFlag.style.display = 'inline';
                 }
-                updateCount(); saveToStorage(); alert("読み込み完了");
+                alert("読み込み完了");
             });
         }
 
+        async function loadFromStorage() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return;
+            await applyDataWithLag(JSON.parse(saved));
+        }
+
+        // --- 共通・UI処理 ---
         function saveToStorage() {
             const formData = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { formData[el.name] = el.value; });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
             const status = document.getElementById('save-status');
             status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 2000);
-        }
-
-        function loadFromStorage() {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (!saved) return;
-            const data = JSON.parse(saved);
-            const lvOrder = ['major', 'middle', 'minor'];
-            document.querySelectorAll('#mainForm [name]').forEach(el => {
-                if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-            });
-            lvOrder.forEach(lv => {
-                document.querySelectorAll(`select[data-lv="${lv}"]`).forEach(el => {
-                    if (data[el.name] !== undefined) {
-                        el.value = data[el.name];
-                        syncICF(el);
-                    }
-                });
-            });
-            updateCount();
         }
 
         function updateCount() {
