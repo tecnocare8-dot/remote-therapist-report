@@ -16,7 +16,6 @@
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
-        .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
         .count-blue { color: blue; }
         .count-red { color: red; }
@@ -44,14 +43,7 @@
         </div>
     </div>
 
-    <div id="tab-face" class="tab-content" style="display:none;">
-        <div class="container">
-            <div id="face-img-area"></div>
-        </div>
-    </div>
-
     <script>
-        // デプロイした新しいGASのURLに書き換えてください
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzo5FCtqC5OyMflNl6flKrDivPev96rfGjOVVyaBQujQZCKx_FamR_tnxhCtrj2fy5O/exec"; 
         let currentConfig = [], lists = [], function_lists = [], activity_lists = [];
 
@@ -85,29 +77,11 @@
 
         function render(config) {
             const fieldsDiv = document.getElementById('fields');
-            const faceArea = document.getElementById('face-img-area');
-            fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
+            fieldsDiv.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
-
-                // 画像・動画表示
-                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
-                    const g = document.createElement('div'); g.style.marginBottom = "25px";
-                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
-                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-                    } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl);
-                        img.style.width = "100%"; img.style.borderRadius = "8px";
-                        img.onerror = () => { img.style.display='none'; };
-                        g.appendChild(img);
-                    }
-                    faceArea.appendChild(g);
-                    if (type === 'face' || type === 'movie') return;
-                }
 
                 const group = document.createElement('div'); group.className = 'field-group';
                 group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
@@ -115,17 +89,16 @@
                 let input;
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
-                    // 全角数字を維持してグループ名を特定
                     input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.addEventListener('change', (e) => { syncICF(e.target); updateTotalCount(); });
-                } else if (type === 'textarea') {
-                    input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                     input.addEventListener('change', updateTotalCount);
+                } else if (type === 'textarea') {
+                    input = document.createElement('textarea'); input.rows = 4;
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                     input.addEventListener('input', updateTotalCount);
@@ -133,10 +106,6 @@
                 
                 input.name = name;
                 group.appendChild(input);
-
-                if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text')) {
-                    group.appendChild(Object.assign(document.createElement('div'), { className: 'limit-guide', innerText: `文字数上限 ${limit} 文字` }));
-                }
 
                 if (name.includes('計画書へ転記')) {
                     group.appendChild(Object.assign(document.createElement('div'), { className: 'count-guide count-blue', id: `guide-${name}`, innerText: "0 / 3 選択中" }));
@@ -151,35 +120,54 @@
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
             const max = limitRow ? parseInt(limitRow[3]) : 3;
 
-            // 「計画書へ転記」というラベルを持つセレクトをすべて数える
             const tenkiSelects = document.querySelectorAll('select[name*="計画書へ転記"]');
             tenkiSelects.forEach(sel => { if (sel.value === "転記する") total++; });
 
             tenkiSelects.forEach(sel => {
                 const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
-                    guide.innerText = (sel.value === "転記する") ? `${total} / ${max} 選択中` : "0 / 3 選択中";
-                    guide.className = (sel.value === "転記する" && total > max) ? 'count-guide count-red' : 'count-guide count-blue';
+                    guide.innerText = `${total} / ${max} 選択中`;
+                    guide.className = total > max ? 'count-guide count-red' : 'count-guide count-blue';
                 }
             });
-            if (total > max) alert(`計画書転記の上限は${max}件です。現在: ${total}件`);
+        }
+
+        function getListBySource(src) {
+            if (src === 'activity') return activity_lists;
+            if (src === 'function') return function_lists;
+            return lists;
+        }
+
+        function initICF() {
+            document.querySelectorAll('select[data-lv="major"]').forEach(el => {
+                const list = getListBySource(el.dataset.source);
+                el.innerHTML = '<option value="">-- 選択 --</option>';
+                // A列（index 0）を大項目として取得
+                [...new Set(list.slice(1).map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
+            });
         }
 
         function syncICF(target) {
             const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
-            const list = (src === 'activity' ? activity_lists : (src === 'function' ? function_lists : lists)).slice(1);
+            const list = getListBySource(src).slice(1);
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-            const val = String(target.value).trim();
 
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.filter(r => String(r[0]).trim() === val).map(r => r[1]))].filter(v => v).forEach(v => middle.add(new Option(v.trim(), v.trim())));
+                const val = String(target.value).trim();
+                // A列が一致する行のB列（index 1）を取得
+                const filtered = list.filter(r => String(r[0]).trim() === val);
+                [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === val).forEach(r => { if(r[2]) minor.add(new Option(r[2].trim(), r[2].trim())); });
+                const majVal = String(major.value).trim();
+                const midVal = String(target.value).trim();
+                // A列とB列が一致する行のC列（index 2）を取得
+                list.filter(r => String(r[0]).trim() === majVal && String(r[1]).trim() === midVal)
+                    .forEach(r => { if(r[2]) minor.add(new Option(String(r[2]).trim(), String(r[2]).trim())); });
             }
         }
 
@@ -190,11 +178,9 @@
                 if (!res || !res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
-
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
-
                 const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
                 for (const major of icfMajors) {
                     const g = major.dataset.group;
@@ -220,26 +206,13 @@
             return new Promise((resolve) => {
                 let count = 0;
                 const itv = setInterval(() => {
-                    if (Array.from(selectEl.options).map(o => o.value).includes(val)) {
+                    if (Array.from(selectEl.options).some(o => o.value === val)) {
                         selectEl.value = val;
                         clearInterval(itv); resolve();
                     } else if (count > 30) { clearInterval(itv); resolve(); }
                     count++;
                 }, 100);
             });
-        }
-
-        function initICF() {
-            document.querySelectorAll('select[data-lv="major"]').forEach(el => {
-                const list = (el.dataset.source === 'activity' ? activity_lists : (el.dataset.source === 'function' ? function_lists : lists));
-                el.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => el.add(new Option(v.trim(), v.trim())));
-            });
-        }
-
-        function getThumb(url) {
-            const id = url ? url.match(/[-\w]{25,}/) : null;
-            return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
         }
 
         function switchTab(id, btn) {
