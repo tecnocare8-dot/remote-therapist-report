@@ -18,6 +18,10 @@
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
+        
+        /* 追記：ガイドメッセージ用スタイル */
+        .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
+        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -100,7 +104,7 @@
                     } else if (imgUrl) {
                         const img = document.createElement('img'); 
                         img.src = getThumb(imgUrl);
-                        img.onerror = () => { img.style.display='none'; }; // 401エラー時に壊れた画像を出さない
+                        img.onerror = () => { img.style.display='none'; };
                         g.appendChild(img);
                     }
                     faceArea.appendChild(g);
@@ -119,25 +123,76 @@
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => {
                         syncICF(e.target);
-                        checkSelectionLimit();
+                        updateCountDisplay();
                     };
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
-                    if (limit) input.maxLength = limit;
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                    input.onchange = () => { if (name.includes('計画書へ転記')) checkSelectionLimit(); };
+                    input.onchange = () => { updateCountDisplay(); };
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
-                    if (limit) input.maxLength = limit;
                 }
                 
                 input.name = name;
                 group.appendChild(input);
+
+                // 文字数上限の表示（赤字）
+                if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
+                    input.maxLength = limit;
+                    const guide = document.createElement('div');
+                    guide.className = 'limit-guide';
+                    guide.innerText = `文字数上限 ${limit} 文字`;
+                    group.appendChild(guide);
+                }
+
+                // 選択数カウントの表示領域（青字）
+                if (name.includes('計画書へ転記')) {
+                    const countGuide = document.createElement('div');
+                    countGuide.className = 'count-guide';
+                    countGuide.id = `count-guide-${name}`;
+                    group.appendChild(countGuide);
+                }
+
                 fieldsDiv.appendChild(group);
             });
             initICF();
+            updateCountDisplay();
+        }
+
+        // 選択数のリアルタイムカウントと表示
+        function updateCountDisplay() {
+            const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
+            let selectedCount = 0;
+            const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
+            const maxLimit = limitRow ? parseInt(limitRow[3]) : 3;
+
+            targetGroups.forEach(group => {
+                const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
+                const task = document.querySelector(`[name="${group}_課題"]`);
+                const guide = document.getElementById(`count-guide-${group}_計画書へ転記`);
+                
+                let isCounted = false;
+                if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "" && task.value !== "-- 選択 --") {
+                    selectedCount++;
+                    isCounted = true;
+                }
+
+                // 表示の更新
+                if (guide) {
+                    if (tenki && tenki.value === "転記する") {
+                        guide.innerText = `現在 ${selectedCount} / ${maxLimit} 選択中`;
+                        guide.style.display = 'block';
+                    } else {
+                        guide.style.display = 'none';
+                    }
+                }
+            });
+
+            if (selectedCount > maxLimit) {
+                alert(`「計画書へ転記」は最大${maxLimit}件までです。現在: ${selectedCount}件`);
+            }
         }
 
         function getListBySource(src) {
@@ -150,9 +205,10 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.slice(1).map(r => r[0]))]
-                    .filter(v => v)
-                    .forEach(v => el.add(new Option(v.trim(), v.trim())));
+                [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => {
+                    const cleanV = String(v).trim();
+                    el.add(new Option(cleanV, cleanV));
+                });
             });
         }
 
@@ -163,38 +219,23 @@
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-            const currentVal = target.value.trim();
+            const targetVal = String(target.value).trim();
 
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = list.filter(r => String(r[0]).trim() === currentVal);
-                [...new Set(filtered.map(r => r[1]))]
-                    .filter(v => v)
-                    .forEach(v => middle.add(new Option(v.trim(), v.trim())));
+                const filtered = list.filter(r => String(r[0]).trim() === targetVal);
+                [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => {
+                    const cleanV = String(v).trim();
+                    middle.add(new Option(cleanV, cleanV));
+                });
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => String(r[0]).trim() === major.value.trim() && String(r[1]).trim() === currentVal)
-                    .forEach(r => { if(r[2]) minor.add(new Option(r[2].trim(), r[2].trim())); });
-            }
-        }
-
-        function checkSelectionLimit() {
-            const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
-            let selectedCount = 0;
-            const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
-            const maxLimit = limitRow ? parseInt(limitRow[3]) : 3;
-
-            targetGroups.forEach(group => {
-                const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
-                const task = document.querySelector(`[name="${group}_課題"]`);
-                if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "-- 選択 --") {
-                    selectedCount++;
-                }
-            });
-
-            if (selectedCount > maxLimit) {
-                alert(`「計画書へ転記」は最大${maxLimit}件までです。現在: ${selectedCount}件`);
+                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === targetVal)
+                    .forEach(r => { if(r[2]) {
+                        const cleanV = String(r[2]).trim();
+                        minor.add(new Option(cleanV, cleanV));
+                    }});
             }
         }
 
@@ -206,12 +247,10 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
-                // 1. 通常フィールドの反映
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // 2. ICF連動項目の反映（大→中→小を確実な待機と空白除去で処理）
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 for (const g of groups) {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -219,28 +258,43 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                     if (major && data[major.name]) {
-                        major.value = data[major.name].trim();
-                        syncICF(major); 
-                        await new Promise(r => setTimeout(r, 250)); // 生成を長めに待機
+                        const majorVal = String(data[major.name]).trim();
+                        major.value = majorVal;
+                        syncICF(major);
+                        await waitForOptions(middle);
 
                         if (middle && data[middle.name]) {
-                            middle.value = data[middle.name].trim();
+                            const middleVal = String(data[middle.name]).trim();
+                            middle.value = middleVal;
                             syncICF(middle);
-                            await new Promise(r => setTimeout(r, 250)); // 生成を長めに待機
+                            await waitForOptions(minor);
 
                             if (minor && data[minor.name]) {
-                                minor.value = data[minor.name].trim();
+                                minor.value = String(data[minor.name]).trim();
                             }
                         }
                     }
                 }
-
+                updateCountDisplay();
                 if (data["PDFリンク"]) {
                     const viewer = document.getElementById('pdf-viewer');
                     viewer.src = data["PDFリンク"].replace("/view", "/preview");
                     viewer.style.display = 'block';
                 }
                 alert("読み込み完了");
+            });
+        }
+
+        function waitForOptions(selectEl) {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const interval = setInterval(() => {
+                    attempts++;
+                    if (selectEl.options.length > 1 || attempts > 20) {
+                        clearInterval(interval);
+                        resolve();
+                    }
+                }, 100);
             });
         }
 
