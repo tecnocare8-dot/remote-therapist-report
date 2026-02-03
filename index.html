@@ -60,6 +60,9 @@
         const STORAGE_KEY = "rt_report_temp";
         let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
 
+        /**
+         * 通信：JSONP方式（401エラーを回避する最も安定した方法）
+         */
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
             window[id] = (data) => {
@@ -182,28 +185,23 @@
                 middleEl.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.filter(r => String(r[0]) === String(target.value)).map(r => r[1]))].filter(v => v).forEach(v => middleEl.add(new Option(v, v)));
                 if(minorEl) minorEl.innerHTML = '<option value="">-- 選択 --</option>';
-                // カスタムイベントを発火させて連動を通知
-                middleEl.dispatchEvent(new Event('options-ready'));
+                middleEl.dispatchEvent(new Event('options-ready')); // イベント通知
             } else if (lv === 'middle' && minorEl) {
                 minorEl.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]) === String(majorEl.value) && String(r[1]) === String(target.value)).forEach(r => { if(r[2]) minorEl.add(new Option(r[2], r[2])); });
-                // カスタムイベントを発火
-                minorEl.dispatchEvent(new Event('options-ready'));
+                minorEl.dispatchEvent(new Event('options-ready')); // イベント通知
             }
         }
 
         /**
-         * 【以前の挙動を再現】
-         * 値をセットし、かつ選択肢にコード(a123等)が含まれるものを優先して選ぶ
+         * 照合ロジック（田中さんのマスタ形式に最適化）
          */
         function forceSetValue(element, value) {
-            if (!value || !element) return;
+            if (!value || !element) return false;
             const codeMatch = String(value).match(/[a-p]\d{2,5}/i);
             const code = codeMatch ? codeMatch[0].toLowerCase() : null;
             const options = Array.from(element.options);
-            
             let targetOption = options.find(o => code ? o.value.toLowerCase().includes(code) : o.value.trim() === String(value).trim());
-            
             if (targetOption) {
                 element.value = targetOption.value;
                 syncICF(element);
@@ -213,33 +211,25 @@
         }
 
         /**
-         * 【核心】再帰的な階層復元ロジック
-         * 待機時間ではなく、階層が整ったイベントをトリガーにする
+         * 復元：待機時間を使わないイベント連動型
          */
         function restoreHierarchy(data) {
-            // 1. 通常項目の復元
             document.querySelectorAll('#mainForm [name]').forEach(el => {
                 if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
             });
 
-            // 2. 階層項目の復元（各グループの大項目から開始）
             const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-            
             groups.forEach(g => {
                 const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                 const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                 const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                 if (major && data[major.name]) {
-                    // 大項目をセット
                     forceSetValue(major, data[major.name]);
-
-                    // 中項目の選択肢が用意できたらセット
                     if (middle && data[middle.name]) {
                         const onMiddleReady = () => {
                             if (forceSetValue(middle, data[middle.name])) {
                                 middle.removeEventListener('options-ready', onMiddleReady);
-                                // 小項目の選択肢が用意できたらセット
                                 if (minor && data[minor.name]) {
                                     const onMinorReady = () => {
                                         forceSetValue(minor, data[minor.name]);
@@ -262,15 +252,13 @@
             callGAS({ action: 'find', email: email }, (res) => {
                 if (!res.data) return alert("過去データなし");
                 document.getElementById('rowNum').value = res.rowNum;
-                
                 restoreHierarchy(res.data);
-
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = res.data["PDFリンク"];
                 if (pdfUrl) {
-                    const previewUrl = pdfUrl.replace("/view", "/preview");
-                    pdfViewer.src = previewUrl; pdfViewer.style.display = 'block'; reportFlag.style.display = 'inline';
+                    pdfViewer.src = pdfUrl.replace("/view", "/preview");
+                    pdfViewer.style.display = 'block'; reportFlag.style.display = 'inline';
                 }
                 alert("読み込み完了");
             });
@@ -297,8 +285,8 @@
 
         function getThumb(url) {
             if(!url) return "";
-            let id = url.match(/[-\w]{25,}/);
-            return id ? "https://drive.google.com/thumbnail?id=" + id[0] + "&sz=w1000" : "";
+            const id = url.match(/[-\w]{25,}/);
+            return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
         }
 
         function switchTab(id, btn) {
