@@ -16,6 +16,7 @@
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
+        .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
         .count-blue { color: blue; }
         .count-red { color: red; }
@@ -87,10 +88,10 @@
             fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
             
             config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
+                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // --- Face情報タブへの隔離 ---
+                // --- 1. Face情報タブへの隔離 ---
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -107,7 +108,7 @@
                     if (type === 'face' || type === 'movie') return;
                 }
 
-                // --- 入力フォーム生成 ---
+                // --- 2. 報告入力フォームの生成 ---
                 const group = document.createElement('div'); group.className = 'field-group';
                 group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
@@ -132,6 +133,14 @@
                 input.name = name;
                 group.appendChild(input);
 
+                // 文字数上限表示の復元
+                if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
+                    const guide = document.createElement('div');
+                    guide.className = 'limit-guide';
+                    guide.innerText = `文字数上限 ${limit} 文字`;
+                    group.appendChild(guide);
+                }
+
                 if (name.includes('計画書へ転記')) {
                     group.appendChild(Object.assign(document.createElement('div'), { className: 'count-guide count-blue', id: `guide-${name}`, innerText: "0 / 3 選択中" }));
                 }
@@ -144,10 +153,8 @@
             let total = 0;
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
             const max = limitRow ? parseInt(limitRow[3]) : 3;
-
             const tenkiSelects = document.querySelectorAll('select[name*="計画書へ転記"]');
             tenkiSelects.forEach(sel => { if (sel.value === "転記する") total++; });
-
             tenkiSelects.forEach(sel => {
                 const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
@@ -167,14 +174,14 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                // slice(1)を削除し、全行をデータとして扱う
+                // スライスせずに1行目から読み込むことで「買い物」を救出
                 [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
             const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
-            const list = getListBySource(src); // slice(1)を削除
+            const list = getListBySource(src);
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
