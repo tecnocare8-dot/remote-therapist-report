@@ -18,8 +18,9 @@
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
         
+        /* 田中様指示のスタイル */
         .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
-        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
+        .count-guide { color: blue; font-size: 12px; margin-top: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -46,7 +47,6 @@
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
-            <h3>Face情報</h3>
             <iframe id="pdf-viewer"></iframe>
             <div id="face-img-area"></div>
         </div>
@@ -117,16 +117,16 @@
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
-                    input.addEventListener('change', (e) => {
+                    input.onchange = (e) => {
                         syncICF(e.target);
-                        updateCountDisplay();
-                    });
+                        updateTotalCount();
+                    };
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                    input.addEventListener('change', updateCountDisplay);
+                    input.onchange = () => { updateTotalCount(); };
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                 }
@@ -135,8 +135,8 @@
                 group.appendChild(input);
 
                 if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
-                    input.maxLength = limit;
-                    const guide = document.createElement('div'); guide.className = 'limit-guide';
+                    const guide = document.createElement('div');
+                    guide.className = 'limit-guide';
                     guide.innerText = `文字数上限 ${limit} 文字`;
                     group.appendChild(guide);
                 }
@@ -144,45 +144,42 @@
                 if (name.includes('計画書へ転記')) {
                     const countGuide = document.createElement('div');
                     countGuide.className = 'count-guide';
-                    countGuide.id = `count-guide-${name}`;
+                    countGuide.id = `guide-${name}`;
                     group.appendChild(countGuide);
                 }
 
                 fieldsDiv.appendChild(group);
             });
             initICF();
-            updateCountDisplay();
+            updateTotalCount();
         }
 
-        function updateCountDisplay() {
+        function updateTotalCount() {
             const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
-            let totalSelected = 0;
+            let currentTotal = 0;
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
-            const maxLimit = limitRow ? parseInt(limitRow[3]) : 3;
+            const max = limitRow ? parseInt(limitRow[3]) : 3;
 
-            // 1パス目：合計を計算
-            targetGroups.forEach(group => {
-                const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
-                const task = document.querySelector(`[name="${group}_課題"]`);
+            targetGroups.forEach(g => {
+                const tenki = document.querySelector(`[name="${g}_計画書へ転記"]`);
+                const task = document.querySelector(`[name="${g}_課題"]`);
                 if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "" && task.value !== "-- 選択 --") {
-                    totalSelected++;
+                    currentTotal++;
                 }
             });
 
-            // 2パス目：表示を更新
-            targetGroups.forEach(group => {
-                const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
-                const guide = document.getElementById(`count-guide-${group}_計画書へ転記`);
+            targetGroups.forEach(g => {
+                const guide = document.getElementById(`guide-${g}_計画書へ転記`);
+                const tenki = document.querySelector(`[name="${g}_計画書へ転記"]`);
                 if (guide) {
                     if (tenki && tenki.value === "転記する") {
-                        guide.innerText = `${totalSelected} / ${maxLimit} 選択中`;
+                        guide.innerText = `${currentTotal} / ${max} 選択中`;
                     } else {
                         guide.innerText = "";
                     }
                 }
             });
-
-            if (totalSelected > maxLimit) alert(`最大${maxLimit}件までです。現在: ${totalSelected}件`);
+            if (currentTotal > max) alert(`最大${max}件までです。現在: ${currentTotal}件`);
         }
 
         function getListBySource(src) {
@@ -196,8 +193,8 @@
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => {
-                    const cv = String(v).trim();
-                    el.add(new Option(cv, cv));
+                    const cleanV = String(v).trim();
+                    el.add(new Option(cleanV, cleanV));
                 });
             });
         }
@@ -214,16 +211,16 @@
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === val);
                 [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => {
-                    const cv = String(v).trim();
-                    middle.add(new Option(cv, cv));
+                    const cleanV = String(v).trim();
+                    middle.add(new Option(cleanV, cleanV));
                 });
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === val)
                     .forEach(r => { if(r[2]) {
-                        const cv = String(r[2]).trim();
-                        minor.add(new Option(cv, cv));
+                        const cleanV = String(r[2]).trim();
+                        minor.add(new Option(cleanV, cleanV));
                     }});
             }
         }
@@ -236,12 +233,10 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
-                // 通常フィールド
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // 連動セレクトボックスの順次反映
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 for (const g of groups) {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -249,41 +244,43 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
                     if (major && data[major.name]) {
-                        major.value = String(data[major.name]).trim();
+                        const majorVal = String(data[major.name]).trim();
+                        major.value = majorVal;
                         syncICF(major);
-                        await pollForValue(middle, String(data[middle.name]).trim());
+                        await waitForOptions(middle, majorVal);
 
-                        if (middle && middle.value && data[minor.name]) {
+                        if (middle && data[middle.name]) {
+                            const middleVal = String(data[middle.name]).trim();
+                            middle.value = middleVal;
                             syncICF(middle);
-                            await pollForValue(minor, String(data[minor.name]).trim());
+                            await waitForOptions(minor, middleVal);
+
+                            if (minor && data[minor.name]) {
+                                minor.value = String(data[minor.name]).trim();
+                            }
                         }
                     }
                 }
-                updateCountDisplay();
+                updateTotalCount();
                 if (data["PDFリンク"]) {
-                    const v = document.getElementById('pdf-viewer');
-                    v.src = data["PDFリンク"].replace("/view", "/preview");
-                    v.style.display = 'block';
+                    const viewer = document.getElementById('pdf-viewer');
+                    viewer.src = data["PDFリンク"].replace("/view", "/preview");
+                    viewer.style.display = 'block';
                 }
                 alert("読み込み完了");
             });
         }
 
-        // 小項目などがDOMに出現するまで粘り強く待機してセットする
-        function pollForValue(selectEl, targetValue) {
+        function waitForOptions(selectEl, targetValue) {
             return new Promise((resolve) => {
-                let count = 0;
-                const itv = setInterval(() => {
-                    const opts = Array.from(selectEl.options).map(o => o.value);
-                    if (opts.includes(targetValue)) {
-                        selectEl.value = targetValue;
-                        clearInterval(itv);
-                        resolve();
-                    } else if (count > 20) { // 最大2秒
-                        clearInterval(itv);
+                let attempts = 0;
+                const interval = setInterval(() => {
+                    const options = Array.from(selectEl.options).map(o => o.value);
+                    if (options.includes(targetValue) || attempts > 20) {
+                        clearInterval(interval);
                         resolve();
                     }
-                    count++;
+                    attempts++;
                 }, 100);
             });
         }
@@ -305,8 +302,10 @@
             btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) }).then(() => {
-                alert("送信完了"); location.reload();
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
+                alert("送信完了");
+                location.reload();
             });
         }
     </script>
