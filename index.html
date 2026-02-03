@@ -56,22 +56,34 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxRcQ5sQSKdn1R3H9RlHdQgBHw_M0KWpKgkhnO-igkv3atVNJJiVyCBBowbRiykJVcH/exec"; 
+    // 【重要】新しいデプロイ後のURLをここに貼る
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbyMU1Ev7CKi81Elat7eW7mnKCrcPl9X-kg3xSuCCEELQK0uiG_riXcXoSx7EZQPirnY/exec"; 
 
-        let masterLists = [], functionLists = [], activityLists = [], currentConfig = [];
-        const STORAGE_KEY = "rt_report_temp";
+    function callGAS(params, callback) {
+        const id = 'jsonp_' + Date.now();
+        window[id] = (data) => {
+            callback(data);
+            const el = document.getElementById(id);
+            if (el) document.body.removeChild(el);
+            delete window[id];
+        };
+        const script = document.createElement('script');
+        script.id = id;
+        
+        // URL組み立ての修正
+        const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+        const separator = GAS_URL.indexOf('?') > -1 ? '&' : '?';
+        script.src = `${GAS_URL}${separator}${query}&callback=${id}`;
+        
+        script.onerror = () => {
+            alert("GASへの接続に失敗しました。URLまたは権限を確認してください。");
+            document.getElementById('loading').innerText = "接続失敗";
+        };
+        document.body.appendChild(script);
+    }
 
-        function callGAS(params, callback) {
-            const id = 'jsonp_' + Date.now();
-            window[id] = (data) => {
-                callback(data);
-                const el = document.getElementById(id);
-                if (el) document.body.removeChild(el);
-                delete window[id];
-            };
-            const script = document.createElement('script');
-            script.id = id;
-            
+    // window.onload などの他の部分は既存のままでOKです
+　</script>  
             // --- ここから修正 ---
             const queryParams = new URLSearchParams(params);
             queryParams.append('callback', id);
