@@ -80,8 +80,7 @@
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
-                // 描画後に初期カウントを強制表示
-                setTimeout(updateTotalCount, 100);
+                setTimeout(updateTotalCount, 300);
             });
         };
 
@@ -116,7 +115,8 @@
                 let input;
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
-                    input.dataset.group = name.split('_')[0].trim();
+                    // 参加長期１_ICF大 などから正確にグループを抽出
+                    input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
                     input.dataset.lv = type.split('_')[1];
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.addEventListener('change', (e) => {
@@ -131,6 +131,7 @@
                     input.addEventListener('change', updateTotalCount);
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
+                    input.addEventListener('input', updateTotalCount);
                 }
                 
                 input.name = name;
@@ -146,7 +147,6 @@
                     const countGuide = document.createElement('div');
                     countGuide.className = 'count-guide count-blue';
                     countGuide.id = `guide-${name}`;
-                    // 初期値をセット
                     countGuide.innerText = "0 / 3 選択中";
                     group.appendChild(countGuide);
                 }
@@ -157,33 +157,37 @@
         }
 
         function updateTotalCount() {
-            const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
             let currentTotal = 0;
             const limitRow = currentConfig.find(row => row[0] === '課題選択上限');
             const max = limitRow ? parseInt(limitRow[3]) : 3;
 
-            targetGroups.forEach(g => {
-                const tenki = document.querySelector(`[name="${g}_計画書へ転記"]`);
-                const task = document.querySelector(`[name="${g}_課題"]`);
-                if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "-- 選択 --") {
+            // 「計画書へ転記」のすべてのセレクトを対象にカウント
+            const allTenki = document.querySelectorAll('select[name*="計画書へ転記"]');
+            allTenki.forEach(sel => {
+                const baseName = sel.name.replace('_計画書へ転記', '');
+                // 課題、またはICF小が入力されているかチェック
+                const taskSel = document.querySelector(`[name="${baseName}_課題"]`) || 
+                                document.querySelector(`[name="${baseName}_ICF小"]`);
+                
+                if (sel.value === "転記する" && taskSel && taskSel.value && taskSel.value !== "-- 選択 --" && taskSel.value !== "") {
                     currentTotal++;
                 }
             });
 
-            targetGroups.forEach(g => {
-                const guide = document.getElementById(`guide-${g}_計画書へ転記`);
-                const tenki = document.querySelector(`[name="${g}_計画書へ転記"]`);
+            // 転記するを選択している項目の下にカウントと色を表示
+            allTenki.forEach(sel => {
+                const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
-                    if (tenki && tenki.value === "転記する") {
+                    if (sel.value === "転記する") {
                         guide.innerText = `${currentTotal} / ${max} 選択中`;
                         guide.className = currentTotal > max ? 'count-guide count-red' : 'count-guide count-blue';
                     } else {
-                        // 転記しない場合も0/3形式で表示（指示通り）
                         guide.innerText = "0 / 3 選択中";
                         guide.className = 'count-guide count-blue';
                     }
                 }
             });
+
             if (currentTotal > max) alert(`最大${max}件までです。現在: ${currentTotal}件`);
         }
 
@@ -242,20 +246,21 @@
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-                for (const g of groups) {
-                    const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+                // ICF連動：参加長期１ などの全角名称も含めて正確に反映
+                const icfSelects = Array.from(document.querySelectorAll('select[data-lv="major"]'));
+                for (const major of icfSelects) {
+                    const g = major.dataset.group;
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-                    if (major && data[major.name]) {
+                    if (data[major.name]) {
                         major.value = String(data[major.name]).trim();
-                        syncICF(major); // 中項目を強制生成
-                        await pollForValue(middle, String(data[middle.name]).trim());
+                        syncICF(major);
+                        await pollForValue(middle, String(data[middle.name] || "").trim());
 
                         if (middle && middle.value && data[minor.name]) {
-                            syncICF(middle); // 小項目を強制生成
-                            await pollForValue(minor, String(data[minor.name]).trim());
+                            syncICF(middle);
+                            await pollForValue(minor, String(data[minor.name] || "").trim());
                         }
                     }
                 }
@@ -270,6 +275,7 @@
         }
 
         function pollForValue(selectEl, val) {
+            if (!val) return Promise.resolve();
             return new Promise((resolve) => {
                 let count = 0;
                 const itv = setInterval(() => {
@@ -278,7 +284,7 @@
                         selectEl.value = val;
                         clearInterval(itv);
                         resolve();
-                    } else if (count > 30) { clearInterval(itv); resolve(); }
+                    } else if (count > 40) { clearInterval(itv); resolve(); }
                     count++;
                 }, 100);
             });
