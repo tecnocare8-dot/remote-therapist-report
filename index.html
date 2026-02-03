@@ -132,7 +132,7 @@
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     let src = 'master';
-                    if (name.includes('参加')) src = 'activity';
+                    if (name.includes('参加') || name.includes('活動')) src = 'activity';
                     else if (type.includes('function_')) src = 'function';
                     input.dataset.source = src;
                     input.dataset.lv = type.split('_')[1];
@@ -191,31 +191,33 @@
         }
 
         /**
-         * 【修正】プルダウンの中に値が出現するのを待ってからセットする
+         * 【修正】(その他)などの表記揺れを吸収して値をセットする
          */
         async function waitAndSet(element, value) {
             if (!value) return;
-            // 最大2秒間、選択肢の中にターゲットの値が出てくるのを待つ
-            for (let i = 0; i < 20; i++) { 
-                const options = Array.from(element.options).map(o => o.value);
-                if (options.includes(String(value))) {
-                    element.value = value;
-                    syncICF(element); // 次の階層の生成をトリガー
+            const cleanVal = String(value).replace('(その他)', '').trim();
+            
+            for (let i = 0; i < 30; i++) { 
+                const options = Array.from(element.options);
+                // 完全一致、または(その他)を除いた部分一致で探す
+                const targetOption = options.find(o => o.value === String(value) || o.value.includes(cleanVal));
+                
+                if (targetOption) {
+                    element.value = targetOption.value;
+                    syncICF(element);
                     return true;
                 }
-                await sleep(100); // 100msずつ再試行
+                await sleep(150);
             }
-            console.warn("Option not found for: " + element.name + " value: " + value);
+            console.warn("Option not found: " + element.name + " [" + value + "]");
             return false;
         }
 
         async function applyDataWithLag(data) {
-            // 通常項目の復元
             document.querySelectorAll('#mainForm [name]').forEach(el => {
                 if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
             });
 
-            // 階層項目の復元（大->中->小）
             const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
             
             for (let g of groups) {
@@ -223,14 +225,10 @@
                 const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                 const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
-                // 大項目をセット
                 if (major && data[major.name]) {
-                    major.value = data[major.name];
-                    syncICF(major);
-                    // 中項目が生成されるのを待ってセット
+                    await waitAndSet(major, data[major.name]);
                     if (middle && data[middle.name]) {
                         await waitAndSet(middle, data[middle.name]);
-                        // 小項目が生成されるのを待ってセット
                         if (minor && data[minor.name]) {
                             await waitAndSet(minor, data[minor.name]);
                         }
@@ -251,7 +249,7 @@
                 const reportFlag = document.getElementById('report-flag');
                 const pdfUrl = res.data["PDFリンク"];
                 if (pdfUrl) {
-                    const previewUrl = pdfUrl.replace("/view?usp=drivesdk", "/preview").replace("/view", "/preview");
+                    const previewUrl = pdfUrl.replace("/view", "/preview");
                     pdfViewer.src = previewUrl; pdfViewer.style.display = 'block'; reportFlag.style.display = 'inline';
                 }
                 alert("読み込み完了");
@@ -279,8 +277,8 @@
 
         function getThumb(url) {
             if(!url) return "";
-            let id = (url.includes("/d/")) ? url.split("/d/")[1].split("/")[0] : (url.includes("id=") ? url.split("id=")[1].split("&")[0] : "");
-            return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1000" : "";
+            let id = url.match(/[-\w]{25,}/);
+            return id ? "https://drive.google.com/thumbnail?id=" + id[0] + "&sz=w1000" : "";
         }
 
         function switchTab(id, btn) {
@@ -294,11 +292,20 @@
             btn.disabled = true; btn.innerText = "データ送信中...";
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => {
+            
+            // POSTリクエストの安定化
+            fetch(GAS_URL, { 
+                method: "POST", 
+                mode: "no-cors", 
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload) 
+            }).then(() => {
                 localStorage.removeItem(STORAGE_KEY);
                 document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！</p><p>4秒後にリロードします。</p></div>`;
                 setTimeout(() => { location.reload(); }, 4000);
+            }).catch(e => {
+                alert("送信エラー。再試行してください。");
+                btn.disabled = false;
             });
         }
     </script>
