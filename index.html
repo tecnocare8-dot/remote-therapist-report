@@ -11,14 +11,10 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
-        img { width: 100%; border-radius: 8px; margin-bottom: 10px; display: block; border: 1px solid #ddd; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
-        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
-        #pdf-viewer { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; display: none; border-radius: 8px; }
-        .btn-send:disabled { background: #ccc; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -29,12 +25,7 @@
 
     <div id="tab-input" class="tab-content">
         <div class="container">
-            <div class="search-area">
-                <label>前回データ検索（メールアドレス）</label>
-                <input type="email" id="search-email" placeholder="example@gmail.com">
-                <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して自動入力</button>
-            </div>
-            <div id="loading">接続中...</div>
+            <div id="loading">データを読み込み中...</div>
             <form id="mainForm" style="display:none;">
                 <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
@@ -45,16 +36,14 @@
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
-            <h3>Face情報</h3>
-            <iframe id="pdf-viewer"></iframe>
             <div id="face-img-area"></div>
         </div>
     </div>
 
     <script>
+        // 【重要】最新のGASウェブアプリURLに書き換えてください
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzO5_l5thBARfCEhmRVRzCfF843IG7EgjmK9Bpb3G2mlo5t-pyQPDiYqCnVKykSb0Vr/exec"; 
         
-        // GAS側の doInit 戻り値プロパティ名に完全に一致させました
         let lists = [], function_lists = [], activity_lists = [], currentConfig = [];
 
         function callGAS(params, callback) {
@@ -74,12 +63,14 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                // アンダースコア区切りに修正
+                // GASの戻り値と変数名を完全に一致させる
                 lists = data.lists || [];
                 function_lists = data.function_lists || [];
                 activity_lists = data.activity_lists || [];
                 currentConfig = data.config || [];
+                
                 render(currentConfig);
+                
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
             });
@@ -87,47 +78,45 @@
 
         function render(config) {
             const fieldsDiv = document.getElementById('fields');
-            const faceArea = document.getElementById('face-img-area');
-            fieldsDiv.innerHTML = ''; faceArea.innerHTML = '';
+            fieldsDiv.innerHTML = '';
             
-            config.forEach(row => {
-                let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], imgUrl = row[4];
-                if (!name || name === "項目名" || name === "PDFリンク") return;
+            // 1行目（ヘッダー）を飛ばしてループ
+            config.forEach((row, index) => {
+                if (index === 0) return; 
 
-                // face / movie などの表示処理
-                if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
-                    const g = document.createElement('div'); g.style.marginBottom = "25px";
-                    g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    if (type === 'movie' && imgUrl) {
-                        const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
-                        g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-                    } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
-                    }
-                    faceArea.appendChild(g);
-                    if (type === 'face' || type === 'movie') return;
-                }
+                let name = row[0];
+                let type = String(row[1]).trim().toLowerCase();
+                let options = row[2] ? String(row[2]).split(',') : [];
 
-                const group = document.createElement('div'); group.className = 'field-group';
-                const lbl = document.createElement('label'); lbl.innerText = name;
+                if (!name || name === "PDFリンク") return;
+
+                const group = document.createElement('div');
+                group.className = 'field-group';
+                const lbl = document.createElement('label');
+                lbl.innerText = name;
                 group.appendChild(lbl);
 
                 let input;
+                // ICF連動（major, middle, minor）の判定
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
                     input.dataset.group = name.split('_')[0].trim();
                     input.dataset.lv = type.split('_')[1];
-                    // データソース判定をGASプロパティ名に修正
+                    // activity / function / master のソース分け
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => syncICF(e.target);
-                } else if (type === 'textarea') {
-                    input = document.createElement('textarea'); input.rows = 4;
                 } else if (type === 'select' || options.length > 0) {
-                    input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
+                    input = document.createElement('select');
+                    input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+                } else if (type === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.rows = 4;
                 } else {
-                    input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
+                    input = document.createElement('input');
+                    input.type = (type === 'email') ? 'email' : 'text';
                 }
+
                 input.name = name;
                 group.appendChild(input);
                 fieldsDiv.appendChild(group);
@@ -142,17 +131,19 @@
         }
 
         function initICF() {
+            // 全ての major セレクトボックスに初期選択肢をセット
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                const uniqueValues = [...new Set(list.map(r => r[0]))].filter(v => v);
+                // 1行目のヘッダーを除外してユニークな大項目を取得
+                const uniqueValues = [...new Set(list.slice(1).map(r => r[0]))].filter(v => v);
                 uniqueValues.forEach(v => el.add(new Option(v, v)));
             });
         }
 
         function syncICF(target) {
             const g = target.dataset.group, lv = target.dataset.lv, src = target.dataset.source;
-            const list = getListBySource(src);
+            const list = getListBySource(src).slice(1); // ヘッダー除外
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
@@ -160,85 +151,21 @@
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-                [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
+                const uniqueMid = [...new Set(filtered.map(r => r[1]))].filter(v => v);
+                uniqueMid.forEach(v => middle.add(new Option(v, v)));
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
-                middle.dispatchEvent(new Event('options-ready'));
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
                     .forEach(r => { if(r[2]) minor.add(new Option(r[2], r[2])); });
-                minor.dispatchEvent(new Event('options-ready'));
             }
-        }
-
-        function matchAndSet(element, value) {
-            if (!value || !element) return false;
-            const options = Array.from(element.options);
-            const target = options.find(o => o.value.trim() === String(value).trim());
-            if (target) {
-                element.value = target.value;
-                syncICF(element);
-                return true;
-            }
-            return false;
-        }
-
-        function searchData() {
-            const email = document.getElementById('search-email').value;
-            if (!email) return alert("アドレスを入力");
-            callGAS({ action: 'find', email: email }, (res) => {
-                if (!res || !res.data) return alert("過去データなし");
-                document.getElementById('rowNum').value = res.rowNum;
-                const data = res.data;
-
-                // 通常フィールドの埋め込み
-                document.querySelectorAll('#mainForm [name]').forEach(el => {
-                    if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-                });
-
-                // ICF連動セレクトボックスの埋め込み
-                const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
-                groups.forEach(g => {
-                    const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-                    const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-
-                    if (major && data[major.name]) {
-                        matchAndSet(major, data[major.name]);
-                        const onMid = () => {
-                            if (middle && data[middle.name]) {
-                                matchAndSet(middle, data[middle.name]);
-                                const onMin = () => {
-                                    if (minor && data[minor.name]) matchAndSet(minor, data[minor.name]);
-                                    minor.removeEventListener('options-ready', onMin);
-                                };
-                                minor?.addEventListener('options-ready', onMin);
-                            }
-                            middle.removeEventListener('options-ready', onMid);
-                        };
-                        middle?.addEventListener('options-ready', onMid);
-                    }
-                });
-
-                if (data["PDFリンク"]) {
-                    const viewer = document.getElementById('pdf-viewer');
-                    viewer.src = data["PDFリンク"].replace("/view", "/preview");
-                    viewer.style.display = 'block';
-                }
-                alert("読み込み完了");
-            });
-        }
-
-        function getThumb(url) {
-            if(!url) return "";
-            const id = url.match(/[-\w]{25,}/);
-            return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
         }
 
         function switchTab(id, btn) {
             document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('tab-' + id).style.display = 'block'; btn.classList.add('active');
+            document.getElementById('tab-' + id).style.display = 'block';
+            btn.classList.add('active');
         }
 
         async function sendData() {
@@ -247,20 +174,11 @@
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             
-            try {
-                await fetch(GAS_URL, { 
-                    method: "POST", 
-                    mode: "no-cors", 
-                    body: JSON.stringify(payload),
-                    headers: { "Content-Type": "text/plain" }
-                });
-                // no-cors のため成功判定は例外が出ないことで代用
-                document.getElementById('fields').innerHTML = `<div style="text-align:center; padding:40px; color:#1a73e8; font-weight:bold;"><p>送信完了！<br>PDF生成を開始しました。</p></div>`;
-                setTimeout(() => { location.reload(); }, 2500);
-            } catch (e) {
-                alert("送信エラー: " + e.message);
-                btn.disabled = false; btn.innerText = "報告を送信する";
-            }
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
+                document.getElementById('fields').innerHTML = `<h2 style="text-align:center; color:#1a73e8;">送信完了</h2>`;
+                setTimeout(() => { location.reload(); }, 2000);
+            });
         }
     </script>
 </body>
