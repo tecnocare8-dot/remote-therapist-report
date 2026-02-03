@@ -72,10 +72,9 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                // 変数名の不一致を解消（スネークケースに統一）
                 lists = data.lists || [];
-                function_lists = data.function_lists || [];
-                activity_lists = data.activity_lists || [];
+                function_lists = data.function_lists || []; 
+                activity_lists = data.activity_lists || []; 
                 currentConfig = data.config || [];
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
@@ -92,7 +91,6 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
-                // ニックネーム・Face情報のタブ振り分け
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -100,7 +98,10 @@
                         const vId = imgUrl.split('v=')[1] || imgUrl.split('/').pop().split('?')[0];
                         g.innerHTML += `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
                     } else if (imgUrl) {
-                        const img = document.createElement('img'); img.src = getThumb(imgUrl); g.appendChild(img);
+                        const img = document.createElement('img'); 
+                        img.src = getThumb(imgUrl);
+                        img.onerror = () => { img.style.display='none'; }; // 401エラー時に壊れた画像を出さない
+                        g.appendChild(img);
                     }
                     faceArea.appendChild(g);
                     if (type === 'face' || type === 'movie') return;
@@ -118,12 +119,11 @@
                     input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
                     input.onchange = (e) => {
                         syncICF(e.target);
-                        if (type.includes('_minor')) checkSelectionLimit();
+                        checkSelectionLimit();
                     };
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
                     if (limit) input.maxLength = limit;
-                    input.oninput = () => { if(limit && input.value.length >= limit) console.warn("上限文字数です"); };
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                     options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
@@ -150,7 +150,9 @@
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = getListBySource(el.dataset.source);
                 el.innerHTML = '<option value="">-- 選択 --</option>';
-                [...new Set(list.slice(1).map(r => r[0]))].filter(v => v).forEach(v => el.add(new Option(v, v)));
+                [...new Set(list.slice(1).map(r => r[0]))]
+                    .filter(v => v)
+                    .forEach(v => el.add(new Option(v.trim(), v.trim())));
             });
         }
 
@@ -161,21 +163,22 @@
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
 
+            const currentVal = target.value.trim();
+
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-                [...new Set(filtered.map(r => r[1]))].filter(v => v).forEach(v => middle.add(new Option(v, v)));
+                const filtered = list.filter(r => String(r[0]).trim() === currentVal);
+                [...new Set(filtered.map(r => r[1]))]
+                    .filter(v => v)
+                    .forEach(v => middle.add(new Option(v.trim(), v.trim())));
                 if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
-                middle.dispatchEvent(new Event('options-ready'));
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-                    .forEach(r => { if(r[2]) minor.add(new Option(r[2], r[2])); });
-                minor.dispatchEvent(new Event('options-ready'));
+                list.filter(r => String(r[0]).trim() === major.value.trim() && String(r[1]).trim() === currentVal)
+                    .forEach(r => { if(r[2]) minor.add(new Option(r[2].trim(), r[2].trim())); });
             }
         }
 
-        // 選択上限チェック：転記する設定がされている数を確認
         function checkSelectionLimit() {
             const targetGroups = ["体幹", "肩", "肘手首", "ひざ", "股関節", "生活動作"];
             let selectedCount = 0;
@@ -185,7 +188,7 @@
             targetGroups.forEach(group => {
                 const tenki = document.querySelector(`[name="${group}_計画書へ転記"]`);
                 const task = document.querySelector(`[name="${group}_課題"]`);
-                if (tenki && tenki.value === "転記する" && task && task.value !== "" && task.value !== "-- 選択 --") {
+                if (tenki && tenki.value === "転記する" && task && task.value && task.value !== "-- 選択 --") {
                     selectedCount++;
                 }
             });
@@ -195,8 +198,7 @@
             }
         }
 
-        // 検索と非同期連動反映
-        function searchData() {
+        async function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレスを入力");
             callGAS({ action: 'find', email: email }, async (res) => {
@@ -204,24 +206,31 @@
                 document.getElementById('rowNum').value = res.rowNum;
                 const data = res.data;
 
-                // 通常フィールド
+                // 1. 通常フィールドの反映
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // ICF連動（非同期で待機して確実に反映）
+                // 2. ICF連動項目の反映（大→中→小を確実な待機と空白除去で処理）
                 const groups = [...new Set(Array.from(document.querySelectorAll('select[data-lv]')).map(el => el.dataset.group))];
                 for (const g of groups) {
                     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
                     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+
                     if (major && data[major.name]) {
-                        major.value = data[major.name];
-                        await syncAndWait(major);
+                        major.value = data[major.name].trim();
+                        syncICF(major); 
+                        await new Promise(r => setTimeout(r, 250)); // 生成を長めに待機
+
                         if (middle && data[middle.name]) {
-                            middle.value = data[middle.name];
-                            await syncAndWait(middle);
-                            if (minor && data[minor.name]) minor.value = data[minor.name];
+                            middle.value = data[middle.name].trim();
+                            syncICF(middle);
+                            await new Promise(r => setTimeout(r, 250)); // 生成を長めに待機
+
+                            if (minor && data[minor.name]) {
+                                minor.value = data[minor.name].trim();
+                            }
                         }
                     }
                 }
@@ -232,13 +241,6 @@
                     viewer.style.display = 'block';
                 }
                 alert("読み込み完了");
-            });
-        }
-
-        function syncAndWait(el) {
-            return new Promise(resolve => {
-                syncICF(el);
-                setTimeout(resolve, 100); // DOMの更新を待機
             });
         }
 
