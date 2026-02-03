@@ -191,17 +191,29 @@
         }
 
         /**
-         * 【修正】(その他)などの表記揺れを吸収して値をセットする
+         * 【以前の挙動を再現】コード部分（a123など）だけを見て強制一致させるロジック
          */
         async function waitAndSet(element, value) {
             if (!value) return;
-            const cleanVal = String(value).replace('(その他)', '').trim();
             
+            // スペースや(その他)を削ってコード部分を抽出 (例: a6201)
+            const match = String(value).match(/[a-p]\d{2,5}/i);
+            const code = match ? match[0].toLowerCase() : null;
+
             for (let i = 0; i < 30; i++) { 
                 const options = Array.from(element.options);
-                // 完全一致、または(その他)を除いた部分一致で探す
-                const targetOption = options.find(o => o.value === String(value) || o.value.includes(cleanVal));
-                
+                let targetOption = null;
+
+                if (code) {
+                    // プルダウンの選択肢の中からコードが含まれるものを探す
+                    targetOption = options.find(o => o.value.toLowerCase().includes(code));
+                }
+
+                // コードで見つからない場合は完全一致で探す
+                if (!targetOption) {
+                    targetOption = options.find(o => o.value.trim() === String(value).trim());
+                }
+
                 if (targetOption) {
                     element.value = targetOption.value;
                     syncICF(element);
@@ -293,11 +305,9 @@
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
             
-            // POSTリクエストの安定化
             fetch(GAS_URL, { 
                 method: "POST", 
                 mode: "no-cors", 
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload) 
             }).then(() => {
                 localStorage.removeItem(STORAGE_KEY);
