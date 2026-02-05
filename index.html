@@ -58,7 +58,7 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwdmUBVNy6buH11Sb7ub1cICqjmrWlNVJk0KcdWX2NPBycDlxd9JWYN-d0MtRm_EjlV/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwwglcSx9zFcSkVV0mkpYE5OQAcJUC5Ry5cWszCraVPXNTBVr0_86ne54UyQ1viHq3S/exec"; 
         let currentConfig = [], lists = [], function_lists = [], activity_lists = [];
 
         function callGAS(params, callback) {
@@ -275,13 +275,49 @@
         }
 
         function sendData() {
-            const btn = document.querySelector('.btn-send');
-            btn.disabled = true; btn.innerText = "送信中...";
-            const payload = {};
-            document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => { alert("送信完了"); location.reload(); });
-        }
+    // 送信確認
+    if (!confirm("この内容で送信してよろしいですか？")) return;
+
+    const btn = document.querySelector('.btn-send');
+    btn.disabled = true;
+    btn.innerText = "送信中...";
+
+    // 送信データの収集
+    const payload = {};
+    // フォーム内のすべての入力値（hidden含む）を取得
+    document.querySelectorAll('#mainForm [name]').forEach(el => {
+        payload[el.name] = el.value;
+    });
+
+    // 画面全体を覆う案内用オーバーレイを作成
+    const overlay = document.createElement('div');
+    overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:1.2rem;font-weight:bold;color:#1a73e8;padding:20px;";
+    overlay.innerHTML = `
+        <div style="margin-bottom:20px;">✓ 送信を完了しました</div>
+        <div>ただいまPDFを作成中です。<br>数分後に呼び出してみてください。</div>
+        <div style="font-size:0.9rem;color:#666;margin-top:20px;">※この画面はまもなく自動で閉じます</div>
+    `;
+    document.body.appendChild(overlay);
+
+    // GASへPOST送信
+    fetch(GAS_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: JSON.stringify(payload)
+    })
+    .then(() => {
+        // 3秒間案内を表示してから、ページをリロードして元の状態に戻す
+        setTimeout(() => {
+            location.reload();
+        }, 3500);
+    })
+    .catch(err => {
+        document.body.removeChild(overlay);
+        alert("送信エラーが発生しました。");
+        btn.disabled = false;
+        btn.innerText = "送信";
+    });
+}
     </script>
 </body>
 </html>
