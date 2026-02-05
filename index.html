@@ -18,6 +18,8 @@
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         .limit-guide { color: red; font-size: 12px; margin-top: 5px; font-weight: bold; }
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
+        .count-blue { color: blue; }
+        .count-red { color: red; }
         .no-data-msg { color: #d93025; font-size: 14px; font-weight: bold; padding: 10px; border: 1px dashed #d93025; border-radius: 5px; text-align: center; }
         .pdf-viewer { width: 100%; height: 500px; border: 1px solid #ccc; border-radius: 8px; margin-top: 10px; }
     </style>
@@ -56,7 +58,8 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxRag0wzaRPd6KpC79JhTOCg9xxa7fJCch0BM9BuPyFEfxhGpsxKo0bkgnW1982Xzs/exec"; 
+        // 最新のGASデプロイURLに書き換えてください
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbz_ElIkC3vqfRA5fA0ZdRsDoq7FQxFFxWx4c7wfVo6FSynNF8_lniUb4B6lVWhVzw9J/exec"; 
         let currentConfig = [], lists = [], function_lists = [], activity_lists = [];
 
         function callGAS(params, callback) {
@@ -99,16 +102,13 @@
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
-                    
                     const hidden = document.createElement('input');
                     hidden.type = 'hidden'; hidden.name = name; hidden.id = `hidden-${name}`;
-                    hidden.value = imgUrl || ""; // 初期表示はconfig
+                    hidden.value = imgUrl || "";
                     fieldsDiv.appendChild(hidden);
-
                     const previewDiv = document.createElement('div');
                     previewDiv.id = `preview-container-${name}`;
                     updatePreview(previewDiv, type, imgUrl);
-                    
                     g.appendChild(previewDiv);
                     faceArea.appendChild(g);
                     if (type === 'face' || type === 'movie') return;
@@ -130,6 +130,7 @@
                     input.addEventListener('change', updateTotalCount);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
+                    input.addEventListener('input', updateTotalCount); // 追加
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                     input.addEventListener('input', updateTotalCount);
@@ -148,22 +149,18 @@
             initICF();
         }
 
-        // プレビュー表示を更新する関数（データがない場合はメッセージを出す）
         function updatePreview(container, type, url) {
             container.innerHTML = "";
             if (!url || url.trim() === "" || url === "作成中 (数分後に再検索してください)") {
                 container.innerHTML = '<div class="no-data-msg">データが見当たりませんでした</div>';
                 return;
             }
+            const idMatch = url.match(/[-\w]{25,}/);
             if (type === 'movie') {
                 const vId = url.split('v=')[1] || url.split('/').pop().split('?')[0];
                 container.innerHTML = `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
-            } else {
-                const img = document.createElement('img');
-                img.src = getThumb(url);
-                img.style.width = "100%"; img.style.borderRadius = "8px";
-                container.innerHTML = "";
-                container.appendChild(img);
+            } else if (idMatch) {
+                container.innerHTML = `<img src="https://drive.google.com/thumbnail?id=${idMatch[0]}&sz=w1000" style="width:100%; border-radius:8px;">`;
             }
         }
 
@@ -175,31 +172,25 @@
                 const data = res.data;
                 document.getElementById('rowNum').value = res.rowNum;
 
-                const pdfFrame = document.getElementById('pdf-frame');
                 if (data["PDFリンク"] && data["PDFリンク"].includes("drive.google.com")) {
                     const pdfId = data["PDFリンク"].match(/[-\w]{25,}/);
-                    pdfFrame.src = `https://drive.google.com/file/d/${pdfId[0]}/preview`;
+                    document.getElementById('pdf-frame').src = `https://drive.google.com/file/d/${pdfId[0]}/preview`;
                     document.getElementById('pdf-area').style.display = 'block';
-                } else {
-                    document.getElementById('pdf-area').style.display = 'none';
                 }
 
-                // 【原則】dataにあるURLを忠実に再現。なければ「データなし」
                 ['face情報', '動画'].forEach(key => {
                     const h = document.getElementById(`hidden-${key}`);
                     const c = document.getElementById(`preview-container-${key}`);
-                    const type = key === '動画' ? 'movie' : 'face';
-                    
-                    // dataシートの値を隠しフィールドにセット（空なら空をセット）
-                    const targetUrl = data[key] || "";
-                    if (h) h.value = targetUrl;
-                    if (c) updatePreview(c, type, targetUrl);
+                    const val = data[key] || "";
+                    if (h) h.value = val;
+                    if (c) updatePreview(c, (key === '動画' ? 'movie' : 'face'), val);
                 });
 
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
+                // ICF階層の復元ロジック
                 const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
                 for (const major of icfMajors) {
                     const g = major.dataset.group;
@@ -221,6 +212,7 @@
         }
 
         function sendData() {
+            if(!confirm("報告を送信してよろしいですか？")) return;
             const btn = document.querySelector('.btn-send');
             btn.disabled = true; btn.innerText = "送信中...";
             const payload = {};
@@ -228,31 +220,44 @@
 
             const overlay = document.createElement('div');
             overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:1.2rem;font-weight:bold;color:#1a73e8;padding:20px;";
-            overlay.innerHTML = `<div>✓ 送信を受け付けました</div><div style="margin-top:15px;">ただいまPDFを作成中です。<br>数分後に呼び出して確認してください。</div>`;
+            overlay.innerHTML = `<div>✓ 送信を受け付けました</div><div style="margin-top:15px; font-size:1rem; color:#333;">現在PDFを作成中です。<br>数分後に呼び出して確認してください。</div>`;
             document.body.appendChild(overlay);
 
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) });
-            setTimeout(() => { location.reload(); }, 3500);
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
+                setTimeout(() => {
+                    document.body.removeChild(overlay);
+                    // 修正：リロードせずフォームを初期化
+                    document.getElementById('mainForm').reset();
+                    document.getElementById('rowNum').value = "";
+                    document.getElementById('search-email').value = "";
+                    document.querySelectorAll('select[data-lv="middle"], select[data-lv="minor"]').forEach(s => s.innerHTML = '<option value="">-- 選択 --</option>');
+                    render(currentConfig); 
+                    updateTotalCount();
+                    btn.disabled = false; btn.innerText = "報告を送信する";
+                    window.scrollTo(0,0);
+                }, 3000);
+            });
         }
 
-        // --- 共通関数群 ---
         function pollForValue(selectEl, val) {
             if (!val) return Promise.resolve();
             return new Promise((resolve) => {
                 let count = 0;
                 const itv = setInterval(() => {
                     if (Array.from(selectEl.options).some(o => o.value === val)) {
-                        selectEl.value = val;
-                        clearInterval(itv); resolve();
+                        selectEl.value = val; clearInterval(itv); resolve();
                     } else if (count > 30) { clearInterval(itv); resolve(); }
                     count++;
                 }, 100);
             });
         }
+
         function getThumb(url) {
             const id = url ? url.match(/[-\w]{25,}/) : null;
             return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
         }
+
         function syncICF(target) {
             const list = (target.dataset.source === 'activity' ? activity_lists : (target.dataset.source === 'function' ? function_lists : lists));
             const g = target.dataset.group, lv = target.dataset.lv;
@@ -269,6 +274,7 @@
                     .forEach(r => { if(r[2]) minor.add(new Option(String(r[2]).trim(), String(r[2]).trim())); });
             }
         }
+
         function initICF() {
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
                 const list = (el.dataset.source === 'activity' ? activity_lists : (el.dataset.source === 'function' ? function_lists : lists));
@@ -276,19 +282,20 @@
                 [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
         }
+
         function updateTotalCount() {
             let total = 0;
-            const max = 3;
             const tenkiSelects = document.querySelectorAll('select[name*="計画書へ転記"]');
             tenkiSelects.forEach(sel => { if (sel.value === "転記する") total++; });
             tenkiSelects.forEach(sel => {
                 const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
-                    guide.innerText = (sel.value === "転記する") ? `${total} / ${max} 選択中` : "0 / 3 選択中";
-                    guide.className = (sel.value === "転記する" && total > max) ? 'count-guide count-red' : 'count-guide count-blue';
+                    guide.innerText = (sel.value === "転記する") ? `${total} / 3 選択中` : "0 / 3 選択中";
+                    guide.className = (sel.value === "転記する" && total > 3) ? 'count-guide count-red' : 'count-guide count-blue';
                 }
             });
         }
+
         function switchTab(id, btn) {
             document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
