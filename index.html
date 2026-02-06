@@ -38,7 +38,6 @@
             </div>
             <div id="loading">接続中...</div>
             <form id="mainForm" style="display:none;">
-                <input type="hidden" name="rowNum" id="rowNum">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信する</button>
             </form>
@@ -52,7 +51,7 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbyIW8akzCaoDtvQ-oPFfTR9TOaYVJDt2_giHOncTvSd8n2GJfL9_NANf-LXfw-yklCT/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyoEUphdRqxhVJkukPsXG1-5oRDe7XniAj__XzLC2TXZW_AoAjw-UCUwT-WJHeNHay5/exec"; 
         
         const icf_data = { participation: [], activity: [], function: [] };
         let currentConfig = [];
@@ -167,8 +166,6 @@
             callGAS({ action: 'find', email: email }, async (res) => {
                 if (!res || !res.data) return alert("過去データなし");
                 const data = res.data;
-                // 上書き用の行番号を確実に保持
-                document.getElementById('rowNum').value = res.rowNum;
 
                 ['face情報', '動画'].forEach(key => {
                     const h = document.getElementById(`hidden-${key}`);
@@ -222,15 +219,11 @@
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-                // undefined排除ロジック
                 [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v && v !== "undefined").forEach(v => middle.add(new Option(v, v)));
             } else if (lv === 'middle' && minor) {
                 minor.innerHTML = '<option value="">-- 選択 --</option>';
                 list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-                    .forEach(r => { 
-                        let v = String(r[2] || "").trim(); 
-                        if(v && v !== "undefined") minor.add(new Option(v, v)); 
-                    });
+                    .forEach(r => { let v = String(r[2] || "").trim(); if(v && v !== "undefined") minor.add(new Option(v, v)); });
             }
         }
 
@@ -242,18 +235,19 @@
             });
         }
 
+        // 全体の転記状況を一括カウントして各ガイドにコピーする
         function updateTotalCount() {
-            let total = 0;
-            // 「計画書へ転記」を含むすべてのセレクトボックスを網羅的に参照
             const allSelects = Array.from(document.querySelectorAll('select'));
             const tenkiSelects = allSelects.filter(s => s.name.includes('計画書へ転記'));
             
+            let total = 0;
             tenkiSelects.forEach(sel => { if (sel.value === "転記する") total++; });
+            
             tenkiSelects.forEach(sel => {
                 const guide = document.getElementById(`guide-${sel.name}`);
                 if (guide) {
-                    guide.innerText = (sel.value === "転記する") ? `${total} / 3 選択中` : "0 / 3 選択中";
-                    guide.className = (sel.value === "転記する" && total > 3) ? 'count-guide count-red' : 'count-guide count-blue';
+                    guide.innerText = `${total} / 3 選択中`;
+                    guide.className = (total > 3) ? 'count-guide count-red' : 'count-guide count-blue';
                 }
             });
         }
@@ -263,16 +257,15 @@
             const btn = document.querySelector('.btn-send');
             btn.disabled = true; btn.innerText = "送信中...";
             
-            // 確実にデータを引き渡す
             const payload = {};
             document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
 
             const overlay = document.createElement('div');
             overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:1.2rem;font-weight:bold;color:#1a73e8;padding:20px;";
-            overlay.innerHTML = `<div>✓ 送信完了</div><div style="margin-top:15px; font-size:1rem; color:#333;">PDFを作成中です。</div>`;
+            overlay.innerHTML = `<div>✓ 送信完了</div><div style="margin-top:15px; font-size:1rem; color:#333;">現在PDFを作成中です。<br>シートのタイムスタンプをご確認ください。</div>`;
             document.body.appendChild(overlay);
 
-            // GAS側が解析しやすいJSON形式で送信
+            // GAS側の自律的判断を待つためにデータを送信する
             fetch(GAS_URL, { 
                 method: "POST", 
                 body: JSON.stringify(payload),
@@ -283,7 +276,6 @@
                 setTimeout(() => {
                     document.body.removeChild(overlay);
                     document.getElementById('mainForm').reset();
-                    document.getElementById('rowNum').value = ""; // リセット
                     document.getElementById('search-email').value = "";
                     document.querySelectorAll('select[data-lv="middle"], select[data-lv="minor"]').forEach(s => s.innerHTML = '<option value="">-- 選択 --</option>');
                     render(currentConfig); 
