@@ -58,9 +58,9 @@
     </div>
 
     <script>
-        // 最新のGASデプロイURLに書き換えてください
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbz_ElIkC3vqfRA5fA0ZdRsDoq7FQxFFxWx4c7wfVo6FSynNF8_lniUb4B6lVWhVzw9J/exec"; 
-        let currentConfig = [], lists = [], function_lists = [], activity_lists = [];
+        // 田中様の新しいGAS URLに差し替えてください
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRHdYyAO7fA5024TIY-ILGbRkM6Ot_rsU38YG4NVWeXrgC13mQhjJk2M0ZvNZxwXs/exec"; 
+        let currentConfig = [], participation_lists = [], function_lists = [], activity_lists = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -79,7 +79,7 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                lists = data.lists || [];
+                participation_lists = data.participation_lists || []; 
                 function_lists = data.function_lists || []; 
                 activity_lists = data.activity_lists || []; 
                 currentConfig = data.config || [];
@@ -122,7 +122,8 @@
                     input = document.createElement('select');
                     input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
                     input.dataset.lv = type.split('_')[1];
-                    input.dataset.source = type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master');
+                    // 修正：participation、activity、functionを正確にソース指定
+                    input.dataset.source = type.startsWith('participation') ? 'participation' : (type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master'));
                     input.addEventListener('change', (e) => { syncICF(e.target); updateTotalCount(); });
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
@@ -130,7 +131,7 @@
                     input.addEventListener('change', updateTotalCount);
                 } else if (type === 'textarea') {
                     input = document.createElement('textarea'); input.rows = 4;
-                    input.addEventListener('input', updateTotalCount); // 追加
+                    input.addEventListener('input', updateTotalCount);
                 } else {
                     input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
                     input.addEventListener('input', updateTotalCount);
@@ -152,7 +153,7 @@
         function updatePreview(container, type, url) {
             container.innerHTML = "";
             if (!url || url.trim() === "" || url === "作成中 (数分後に再検索してください)") {
-                container.innerHTML = '<div class="no-data-msg">データが見当たりませんでした</div>';
+                container.innerHTML = '<div class="no-data-msg">ファイルがありません</div>';
                 return;
             }
             const idMatch = url.match(/[-\w]{25,}/);
@@ -161,6 +162,8 @@
                 container.innerHTML = `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen></iframe>`;
             } else if (idMatch) {
                 container.innerHTML = `<img src="https://drive.google.com/thumbnail?id=${idMatch[0]}&sz=w1000" style="width:100%; border-radius:8px;">`;
+            } else {
+                container.innerHTML = '<div class="no-data-msg">ファイルがありません</div>';
             }
         }
 
@@ -190,7 +193,7 @@
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // ICF階層の復元ロジック
+                // ICF階層の復旧（ラグを入れず、連鎖的に同期実行）
                 const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
                 for (const major of icfMajors) {
                     const g = major.dataset.group;
@@ -198,45 +201,16 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
                     if (data[major.name]) {
                         major.value = String(data[major.name]).trim();
-                        syncICF(major);
+                        syncICF(major); // 中項目の選択肢を生成
                         await pollForValue(middle, String(data[middle.name] || "").trim());
                         if (middle && middle.value && data[minor.name]) {
-                            syncICF(middle);
+                            syncICF(middle); // 小項目の選択肢を生成
                             await pollForValue(minor, String(data[minor.name] || "").trim());
                         }
                     }
                 }
                 updateTotalCount();
                 alert("読み込み完了");
-            });
-        }
-
-        function sendData() {
-            if(!confirm("報告を送信してよろしいですか？")) return;
-            const btn = document.querySelector('.btn-send');
-            btn.disabled = true; btn.innerText = "送信中...";
-            const payload = {};
-            document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
-
-            const overlay = document.createElement('div');
-            overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:1.2rem;font-weight:bold;color:#1a73e8;padding:20px;";
-            overlay.innerHTML = `<div>✓ 送信を受け付けました</div><div style="margin-top:15px; font-size:1rem; color:#333;">現在PDFを作成中です。<br>数分後に呼び出して確認してください。</div>`;
-            document.body.appendChild(overlay);
-
-            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
-            .then(() => {
-                setTimeout(() => {
-                    document.body.removeChild(overlay);
-                    // 修正：リロードせずフォームを初期化
-                    document.getElementById('mainForm').reset();
-                    document.getElementById('rowNum').value = "";
-                    document.getElementById('search-email').value = "";
-                    document.querySelectorAll('select[data-lv="middle"], select[data-lv="minor"]').forEach(s => s.innerHTML = '<option value="">-- 選択 --</option>');
-                    render(currentConfig); 
-                    updateTotalCount();
-                    btn.disabled = false; btn.innerText = "報告を送信する";
-                    window.scrollTo(0,0);
-                }, 3000);
             });
         }
 
@@ -253,17 +227,14 @@
             });
         }
 
-        function getThumb(url) {
-            const id = url ? url.match(/[-\w]{25,}/) : null;
-            return id ? `https://drive.google.com/thumbnail?id=${id[0]}&sz=w1000` : "";
-        }
-
         function syncICF(target) {
-            const list = (target.dataset.source === 'activity' ? activity_lists : (target.dataset.source === 'function' ? function_lists : lists));
+            const list = (target.dataset.source === 'participation' ? participation_lists : (target.dataset.source === 'activity' ? activity_lists : function_lists));
             const g = target.dataset.group, lv = target.dataset.lv;
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+            
+            // 修正：1行目(インデックス0)から参照するように修正
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
@@ -277,7 +248,7 @@
 
         function initICF() {
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
-                const list = (el.dataset.source === 'activity' ? activity_lists : (el.dataset.source === 'function' ? function_lists : lists));
+                const list = (el.dataset.source === 'participation' ? participation_lists : (el.dataset.source === 'activity' ? activity_lists : function_lists));
                 el.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
@@ -293,6 +264,34 @@
                     guide.innerText = (sel.value === "転記する") ? `${total} / 3 選択中` : "0 / 3 選択中";
                     guide.className = (sel.value === "転記する" && total > 3) ? 'count-guide count-red' : 'count-guide count-blue';
                 }
+            });
+        }
+
+        function sendData() {
+            if(!confirm("送信しますか？")) return;
+            const btn = document.querySelector('.btn-send');
+            btn.disabled = true; btn.innerText = "送信中...";
+            const payload = {};
+            document.querySelectorAll('#mainForm [name]').forEach(el => { payload[el.name] = el.value; });
+
+            const overlay = document.createElement('div');
+            overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:1.2rem;font-weight:bold;color:#1a73e8;padding:20px;";
+            overlay.innerHTML = `<div>✓ 送信完了</div><div style="margin-top:15px; font-size:1rem; color:#333;">現在PDFを作成中です。<br>数分後に呼び出して確認してください。</div>`;
+            document.body.appendChild(overlay);
+
+            fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(payload) })
+            .then(() => {
+                setTimeout(() => {
+                    document.body.removeChild(overlay);
+                    document.getElementById('mainForm').reset();
+                    document.getElementById('rowNum').value = "";
+                    document.getElementById('search-email').value = "";
+                    document.querySelectorAll('select[data-lv="middle"], select[data-lv="minor"]').forEach(s => s.innerHTML = '<option value="">-- 選択 --</option>');
+                    render(currentConfig); 
+                    updateTotalCount();
+                    btn.disabled = false; btn.innerText = "報告を送信する";
+                    window.scrollTo(0,0);
+                }, 3000);
             });
         }
 
