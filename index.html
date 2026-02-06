@@ -48,19 +48,21 @@
 
     <div id="tab-face" class="tab-content" style="display:none;">
         <div class="container">
-            <div id="pdf-area" style="margin-bottom: 30px; display:none;">
-                <label style="color:#d93025; margin-bottom:10px;">【最新の作成済みPDF】</label>
-                <iframe id="pdf-frame" class="pdf-viewer" src=""></iframe>
-            </div>
-            <hr>
             <div id="face-img-area"></div>
         </div>
     </div>
 
     <script>
-        // 田中様の新しいGAS URLに差し替えてください
+        // デプロイURLに書き換えてください
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyRHdYyAO7fA5024TIY-ILGbRkM6Ot_rsU38YG4NVWeXrgC13mQhjJk2M0ZvNZxwXs/exec"; 
-        let currentConfig = [], participation_lists = [], function_lists = [], activity_lists = [];
+        
+        // ICFデータを各シートの役割ごとに格納
+        const icf_data = {
+            participation: [],
+            activity: [],
+            function: []
+        };
+        let currentConfig = [];
 
         function callGAS(params, callback) {
             const id = 'jsonp_' + Date.now();
@@ -79,9 +81,10 @@
 
         window.onload = () => {
             callGAS({ action: 'init' }, (data) => {
-                participation_lists = data.participation_lists || []; 
-                function_lists = data.function_lists || []; 
-                activity_lists = data.activity_lists || []; 
+                // 修正後のシート名「participation_lists」を participation に割り当て
+                icf_data.participation = data.participation_lists || [];
+                icf_data.activity = data.activity_lists || [];
+                icf_data.function = data.function_lists || [];
                 currentConfig = data.config || [];
                 render(currentConfig);
                 document.getElementById('loading').style.display = 'none';
@@ -99,6 +102,7 @@
                 let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3], imgUrl = row[4];
                 if (!name || name === "項目名" || name === "PDFリンク") return;
 
+                // Face画像・動画プレビュー設定
                 if (type === 'face' || type === 'movie' || (name === "ニックネーム" && imgUrl)) {
                     const g = document.createElement('div'); g.style.marginBottom = "25px";
                     g.innerHTML = `<label style="color:#1a73e8;">${name}</label>`;
@@ -118,12 +122,12 @@
                 group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
                 let input;
+                // ICF項目の生成 (configのtype列から直接ソース指定を読み取る)
                 if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                     input = document.createElement('select');
                     input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
                     input.dataset.lv = type.split('_')[1];
-                    // 修正：participation、activity、functionを正確にソース指定
-                    input.dataset.source = type.startsWith('participation') ? 'participation' : (type.startsWith('activity') ? 'activity' : (type.startsWith('function') ? 'function' : 'master'));
+                    input.dataset.source = type.split('_')[0]; // participation, activity, function が直接入る
                     input.addEventListener('change', (e) => { syncICF(e.target); updateTotalCount(); });
                 } else if (type === 'select' || options.length > 0) {
                     input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
@@ -139,9 +143,11 @@
                 input.name = name;
                 group.appendChild(input);
 
+                // 文字数上限表示
                 if (limit && !isNaN(limit) && (type === 'textarea' || type === 'text' || type === '')) {
                     group.appendChild(Object.assign(document.createElement('div'), { className: 'limit-guide', innerText: `文字数上限 ${limit} 文字` }));
                 }
+                // 動的カウント表示（転記項目）
                 if (name.includes('計画書へ転記')) {
                     group.appendChild(Object.assign(document.createElement('div'), { className: 'count-guide count-blue', id: `guide-${name}`, innerText: "0 / 3 選択中" }));
                 }
@@ -175,25 +181,19 @@
                 const data = res.data;
                 document.getElementById('rowNum').value = res.rowNum;
 
-                if (data["PDFリンク"] && data["PDFリンク"].includes("drive.google.com")) {
-                    const pdfId = data["PDFリンク"].match(/[-\w]{25,}/);
-                    document.getElementById('pdf-frame').src = `https://drive.google.com/file/d/${pdfId[0]}/preview`;
-                    document.getElementById('pdf-area').style.display = 'block';
-                }
-
+                // 画像・動画の表示（dataシート準拠）
                 ['face情報', '動画'].forEach(key => {
                     const h = document.getElementById(`hidden-${key}`);
                     const c = document.getElementById(`preview-container-${key}`);
-                    const val = data[key] || "";
-                    if (h) h.value = val;
-                    if (c) updatePreview(c, (key === '動画' ? 'movie' : 'face'), val);
+                    if (h) h.value = data[key] || "";
+                    if (c) updatePreview(c, (key === '動画' ? 'movie' : 'face'), data[key] || "");
                 });
 
                 document.querySelectorAll('#mainForm [name]').forEach(el => {
                     if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
                 });
 
-                // ICF階層の復旧（ラグを入れず、連鎖的に同期実行）
+                // ICF階層復元ロジック (同期制御)
                 const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
                 for (const major of icfMajors) {
                     const g = major.dataset.group;
@@ -201,10 +201,10 @@
                     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
                     if (data[major.name]) {
                         major.value = String(data[major.name]).trim();
-                        syncICF(major); // 中項目の選択肢を生成
+                        syncICF(major);
                         await pollForValue(middle, String(data[middle.name] || "").trim());
                         if (middle && middle.value && data[minor.name]) {
-                            syncICF(middle); // 小項目の選択肢を生成
+                            syncICF(middle);
                             await pollForValue(minor, String(data[minor.name] || "").trim());
                         }
                     }
@@ -228,13 +228,14 @@
         }
 
         function syncICF(target) {
-            const list = (target.dataset.source === 'participation' ? participation_lists : (target.dataset.source === 'activity' ? activity_lists : function_lists));
+            // 直接指定：icf_data 内の対象ソースを直撃
+            const list = icf_data[target.dataset.source];
             const g = target.dataset.group, lv = target.dataset.lv;
             const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
             const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
             
-            // 修正：1行目(インデックス0)から参照するように修正
+            // 1行目から取得 (filterを使用)
             if (lv === 'major' && middle) {
                 middle.innerHTML = '<option value="">-- 選択 --</option>';
                 const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
@@ -248,7 +249,7 @@
 
         function initICF() {
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
-                const list = (el.dataset.source === 'participation' ? participation_lists : (el.dataset.source === 'activity' ? activity_lists : function_lists));
+                const list = icf_data[el.dataset.source];
                 el.innerHTML = '<option value="">-- 選択 --</option>';
                 [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v).forEach(v => el.add(new Option(v, v)));
             });
