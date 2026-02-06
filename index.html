@@ -51,7 +51,7 @@
     </div>
 
     <script>
-        const GAS_URL = "https://script.google.com/macros/s/AKfycby0GDaRM-fzWC5GwYFXQy09OOUo9dWWMZVH2cLiGlelwKUXV4niTr8h-ByW2RBchn5Y/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycby3C7tIG5NwXB4SnmNQ1q9i78Brisq4ofUN6QwffsUeliwGuvC0oTRC8SsnQWnIPUf0/exec"; 
         
         const icf_data = { participation: [], activity: [], function: [] };
         let currentConfig = [];
@@ -163,9 +163,8 @@
         async function searchData() {
             const email = document.getElementById('search-email').value;
             if (!email) return alert("アドレス入力");
-            callGAS({ action: 'find', email: email }, async (res) => {
-                if (!res || !res.data) return alert("過去データなし");
-                const data = res.data;
+                callGAS({ action: 'find', email: email }, async (data) => {
+            if (!data) return alert("過去データなし");
 
                 ['face情報', '動画'].forEach(key => {
                     const h = document.getElementById(`hidden-${key}`);
