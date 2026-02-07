@@ -81,6 +81,7 @@ window.onload = () => {
     icf_data.function = data.function_lists || [];
     currentConfig = data.config || [];
     render(currentConfig);
+    initTextCounter(); // ←【削除禁止】文字数制限UI初期化
     document.getElementById("loading").style.display="none";
     document.getElementById("mainForm").style.display="block";
   });
@@ -219,6 +220,38 @@ function switchTab(id,btn){
   document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
 }
+  /* ============================================================
+【重要】textarea 文字数制限・残り文字数表示
+この関数は UI 品質と入力事故防止のため必須
+ICF・検索・PDF とは独立しているため
+【絶対に削除・統合・インライン化しないこと】
+============================================================ */
+function initTextCounter() {
+  document.querySelectorAll("textarea[maxlength]").forEach(ta => {
+    const max = Number(ta.getAttribute("maxlength"));
+    if (!max) return;
+
+    // 二重生成防止（再描画・再検索対策）
+    if (ta.nextElementSibling?.classList.contains("char-counter")) return;
+
+    const counter = document.createElement("div");
+    counter.className = "char-counter";
+    counter.style.fontSize = "0.8rem";
+    counter.style.color = "#666";
+    counter.style.textAlign = "right";
+    counter.style.marginTop = "4px";
+
+    ta.after(counter);
+
+    const update = () => {
+      counter.innerText = `残り ${max - ta.value.length} 文字`;
+    };
+
+    ta.addEventListener("input", update);
+    update(); // 初期表示
+  });
+}
+  
 </script>
 
 </body>
