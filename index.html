@@ -216,14 +216,17 @@
             const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
             
             if (lv === 'major' && middle) {
-                middle.innerHTML = '<option value="">-- 選択 --</option>';
-                const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-                [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v && v !== "undefined").forEach(v => middle.add(new Option(v, v)));
-            } else if (lv === 'middle' && minor) {
-                minor.innerHTML = '<option value="">-- 選択 --</option>';
-                list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-                    .forEach(r => { let v = String(r[2] || "").trim(); if(v && v !== "undefined") minor.add(new Option(v, v)); });
+                    middle.innerHTML = '<option value="">-- 選択 --</option>';
+
+                list
+                         .filter(r => String(r[0]).trim() === String(target.value).trim())
+                          .forEach(r => {
+            const v = String(r[1]).trim();
+            if (v && !Array.from(middle.options).some(o => o.value === v)) {
+                  middle.add(new Option(v, v));
             }
+      });
+}
         }
 
         function initICF() {
