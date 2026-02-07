@@ -209,22 +209,45 @@
             });
         }
 
-        function syncICF(target) {
-            const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
-            const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-            const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-            const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-            
- if (lv === 'major' && middle) {
+       function syncICF(target) {
+  const list = icf_data[target.dataset.source];
+  const g = target.dataset.group;
+  const lv = target.dataset.lv;
+
+  const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+  const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+  const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+
+  // 大項目 → 中項目
+  if (lv === 'major' && middle) {
     middle.innerHTML = '<option value="">-- 選択 --</option>';
-    const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-    [...new Set(filtered.map(r => String(r[1]).trim()))]
-      .filter(v => v && v !== "undefined")
-      .forEach(v => middle.add(new Option(v, v)));
-}
-      });
-}
+    if (minor) minor.innerHTML = '<option value="">-- 選択 --</option>';
+
+    list
+      .filter(r => String(r[0]).trim() === String(target.value).trim())
+      .forEach(r => {
+        const v = String(r[1]).trim();
+        if (v && !Array.from(middle.options).some(o => o.value === v)) {
+          middle.add(new Option(v, v));
         }
+      });
+  }
+
+  // 中項目 → 小項目（★これが消えていた）
+  if (lv === 'middle' && minor) {
+    minor.innerHTML = '<option value="">-- 選択 --</option>';
+
+    list
+      .filter(r =>
+        String(r[0]).trim() === String(major.value).trim() &&
+        String(r[1]).trim() === String(target.value).trim()
+      )
+      .forEach(r => {
+        const v = String(r[2]).trim();
+        if (v) minor.add(new Option(v, v));
+      });
+  }
+}
 
         function initICF() {
             document.querySelectorAll('select[data-lv="major"]').forEach(el => {
