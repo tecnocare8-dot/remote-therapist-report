@@ -190,11 +190,41 @@ function searchData(){
 
   callGAS({action:"find",email}, data=>{
     if(!data) return alert("データなし");
+
+    // ① 通常項目を先に復元
     document.querySelectorAll("#mainForm [name]").forEach(el=>{
-      if(data[el.name]!==undefined && !el.dataset.lv)
-        el.value=data[el.name];
+      if(!el.dataset.lv && data[el.name]!==undefined){
+        el.value = data[el.name];
+      }
     });
-    alert("読込完了");
+
+    // ② ICF major を復元
+    document.querySelectorAll("select[data-lv='major']").forEach(sel=>{
+      const v = data[sel.name];
+      if(v){
+        sel.value = v;
+        syncICF(sel);
+      }
+    });
+
+    // ③ ICF middle を復元
+    document.querySelectorAll("select[data-lv='middle']").forEach(sel=>{
+      const v = data[sel.name];
+      if(v){
+        sel.value = v;
+        syncICF(sel);
+      }
+    });
+
+    // ④ ICF minor を復元
+    document.querySelectorAll("select[data-lv='minor']").forEach(sel=>{
+      const v = data[sel.name];
+      if(v){
+        sel.value = v;
+      }
+    });
+
+    alert("ICF 含めて読込完了");
   });
 }
 
