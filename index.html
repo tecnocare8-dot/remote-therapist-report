@@ -16,7 +16,6 @@
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
-        .limit-guide { color: #666; font-size: 12px; margin-top: 5px; font-weight: bold; }
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
         .count-blue { color: #1a73e8; }
         .count-red { color: #d93025; }
@@ -47,9 +46,7 @@
 
 <div id="tab-face" class="tab-content" style="display:none;">
     <div class="container">
-        <div id="face-img-area">
-            <div class="no-data-msg">患者を検索するとここに情報が表示されます</div>
-        </div>
+        <div id="face-img-area"></div>
     </div>
 </div>
 
@@ -57,6 +54,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzOn-sNSfTaQUeUWFkcrtGzlCl1ycKOIroKivc0zNeYfTDrQ4A3DlDSjKW0ZbienHYg/exec"; 
 let icf_data = { participation: [], activity: [], function: [] };
 let currentConfig = [];
+let defaultConfigValues = {}; // Config由来の初期URLを保持
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
@@ -79,7 +77,18 @@ window.onload = () => {
         icf_data.activity = data.activity_lists || [];
         icf_data.function = data.function_lists || [];
         currentConfig = data.config || [];
+        
+        // Configからデフォルトの画像・動画URLを抽出
+        currentConfig.forEach(row => {
+            const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4];
+            if (type === 'face' || type === 'movie' || name === "顔写真") {
+                defaultConfigValues[name] = url;
+            }
+        });
+
         render(currentConfig);
+        updateFaceTab(defaultConfigValues); // 初期表示はConfigから
+
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
         updateTotalCount();
@@ -94,10 +103,11 @@ function render(config) {
         let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3];
         if (!name || name === "項目名" || name === "PDFリンク") return;
 
-        // Face情報は裏側に隠し、Faceタブで表示
+        // Face/Movieは隠しフィールドとしてフォームに持たせる（送信・上書き用）
         if (type === 'face' || type === 'movie' || name === "顔写真") {
             const hidden = document.createElement('input');
             hidden.type = 'hidden'; hidden.name = name; hidden.id = `hidden-${name}`;
+            hidden.value = row[4] || "";
             fieldsDiv.appendChild(hidden);
             return;
         }
@@ -127,13 +137,13 @@ function render(config) {
         input.name = name;
         group.appendChild(input);
 
+        // ガイドエリアの生成
         if (name.includes('_計画書へ転記')) {
             const guide = document.createElement('div');
             guide.className = 'count-guide count-blue';
             guide.id = `guide-${name}`;
             group.appendChild(guide);
         }
-
         if (type === 'textarea' && limit) {
             const counter = document.createElement('div');
             counter.id = `counter-${name}`;
@@ -146,69 +156,37 @@ function render(config) {
     initICF();
 }
 
-function searchData() {
-    const email = document.getElementById('search-email').value;
-    if (!email) return alert("メールアドレスを入力してください");
-    
-    document.getElementById('loading').style.display = 'block';
-    callGAS({ action: 'find', email: email }, async (res) => {
-        document.getElementById('loading').style.display = 'none';
-        if (!res || !res.data) return alert("過去データが見つかりませんでした");
-        const data = res.data;
-
-        // 1. Face情報タブの更新
-        updateFaceTab(data);
-
-        // 2. フォーム入力（隠し要素含む）
-        document.querySelectorAll('#mainForm [name], #mainForm input[type="hidden"]').forEach(el => {
-            if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-        });
-
-        // 3. ICF階層の同期
-        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
-        for (const major of icfMajors) {
-            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
-            if (mVal) {
-                major.value = mVal; syncICF(major);
-                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-                const midVal = String(data[middle.name]||"").trim();
-                await pollForValue(middle, midVal);
-                if (middle.value) {
-                    syncICF(middle);
-                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-                    await pollForValue(minor, String(data[minor.name]||"").trim());
-                }
-            }
-        }
-        updateTotalCount();
-        alert("患者データを同期しました。Face情報を確認してください。");
-    });
-}
-
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
-    faceArea.innerHTML = "<h3>患者詳細情報</h3>";
+    faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
-    // PDFリンクがあればボタン表示
+    // PDFリンクがあれば表示
     if (data["PDFリンク"] && data["PDFリンク"].startsWith("http")) {
         const a = document.createElement('a');
         a.href = data["PDFリンク"]; a.target = "_blank"; a.className = "btn-send";
-        a.style = "display:block; text-align:center; text-decoration:none; background:#34a853; margin-bottom:25px;";
+        a.style = "display:block; text-align:center; text-decoration:none; background:#34a853; margin-bottom:25px; padding:15px; border-radius:8px; color:white; font-weight:bold;";
         a.innerText = "📄 最新のPDF報告書を開く";
         faceArea.appendChild(a);
     }
 
-    // 画像と動画
     const media = document.createElement('div');
-    const faceUrl = data["face情報"] || data["顔写真"];
-    const imgHtml = faceUrl ? `<label>現在の状態</label><img src="${faceUrl}" style="width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd;">` : "";
-    
-    let movieHtml = "";
-    if (data["動画"]) {
-        const vId = data["動画"].split('v=')[1] || data["動画"].split('/').pop().split('?')[0];
-        movieHtml = `<label>動作動画</label><iframe width="100%" height="250" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen style="border-radius:8px;"></iframe>`;
+    const faceUrl = data["face情報"] || data["顔写真"] || data["face"];
+    const movieUrl = data["動画"] || data["movie"];
+
+    if (faceUrl && faceUrl.startsWith("http")) {
+        const imgId = faceUrl.match(/[-\w]{25,}/);
+        const src = imgId ? `https://drive.google.com/thumbnail?id=${imgId[0]}&sz=w1000` : faceUrl;
+        media.innerHTML += `<label>Face画像</label><img src="${src}" style="width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd;">`;
     }
-    media.innerHTML = imgHtml + movieHtml;
+
+    if (movieUrl && movieUrl.includes("youtube.com")) {
+        const vId = movieUrl.split('v=')[1]?.split('&')[0] || movieUrl.split('/').pop().split('?')[0];
+        media.innerHTML += `<label>動作動画（YouTube）</label><iframe width="100%" height="250" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen style="border-radius:8px; margin-bottom:20px;"></iframe>`;
+    }
+
+    if (media.innerHTML === "") {
+        media.innerHTML = '<div class="no-data-msg">表示できる画像・動画がありません</div>';
+    }
     faceArea.appendChild(media);
 }
 
@@ -221,7 +199,7 @@ function updateTotalCount() {
     optionalTenki.forEach(sel => {
         const guide = document.getElementById(`guide-${sel.name}`);
         if (guide) {
-            guide.innerText = `${selectedCount} / 3 部位選択中`;
+            guide.innerText = `${selectedCount} / 3 部位選択済み`;
             if (selectedCount >= 3 && sel.value !== "転記する") {
                 sel.disabled = true; sel.style.backgroundColor = "#f0f0f0";
                 guide.className = 'count-guide count-red';
@@ -246,6 +224,42 @@ function updateTotalCount() {
     });
 }
 
+async function searchData() {
+    const email = document.getElementById('search-email').value;
+    if (!email) return alert("メールアドレスを入力してください");
+    
+    document.getElementById('loading').style.display = 'block';
+    callGAS({ action: 'find', email: email }, async (res) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!res || !res.data) return alert("過去データが見つかりませんでした");
+        const data = res.data;
+
+        // 保存されたデータでFaceタブと隠しフィールドを更新
+        updateFaceTab(data);
+        document.querySelectorAll('#mainForm [name], #mainForm input[type="hidden"]').forEach(el => {
+            if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+        });
+
+        // ICF同期
+        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
+        for (const major of icfMajors) {
+            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
+            if (mVal) {
+                major.value = mVal; syncICF(major);
+                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+                await pollForValue(middle, String(data[middle.name]||"").trim());
+                if (middle.value) {
+                    syncICF(middle);
+                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+                    await pollForValue(minor, String(data[minor.name]||"").trim());
+                }
+            }
+        }
+        updateTotalCount();
+        alert("過去データを呼び出しました。当時の画像・動画を表示しています。");
+    });
+}
+
 function sendData() {
     if (!confirm("報告を送信し、PDFを更新しますか？")) return;
     const btn = document.querySelector('.btn-send');
@@ -257,7 +271,7 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
     .then(res => {
-        alert("送信完了。スプレッドシートへの保存とPDFの生成を開始しました。");
+        alert("送信完了しました。");
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     })
     .catch(err => {
