@@ -54,7 +54,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwQtRsEKsjju2ttEetCKEXtIWNj8NPNwgKZkLw7FtTWvYhPfEff-mUqTROJuk9wNsZa/exec"; 
 let icf_data = { participation: [], activity: [], function: [] };
 let currentConfig = [];
-let defaultConfigValues = {}; // Config由来の初期URLを保持
+let defaultConfigValues = {};
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
@@ -78,7 +78,6 @@ window.onload = () => {
         icf_data.function = data.function_lists || [];
         currentConfig = data.config || [];
         
-        // Configからデフォルトの画像・動画URLを抽出
         currentConfig.forEach(row => {
             const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4];
             if (type === 'face' || type === 'movie' || name === "顔写真") {
@@ -87,7 +86,7 @@ window.onload = () => {
         });
 
         render(currentConfig);
-        updateFaceTab(defaultConfigValues); // 初期表示はConfigから
+        updateFaceTab(defaultConfigValues);
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
@@ -103,7 +102,9 @@ function render(config) {
         let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3];
         if (!name || name === "項目名" || name === "PDFリンク") return;
 
-        // Face/Movieは隠しフィールドとしてフォームに持たせる（送信・上書き用）
+        // 【追加】「優先」という文字が含まれる列は、GASでの計算用なのでフォームには出さない
+        if (name.includes('優先')) return;
+
         if (type === 'face' || type === 'movie' || name === "顔写真") {
             const hidden = document.createElement('input');
             hidden.type = 'hidden'; hidden.name = name; hidden.id = `hidden-${name}`;
@@ -137,7 +138,6 @@ function render(config) {
         input.name = name;
         group.appendChild(input);
 
-        // ガイドエリアの生成
         if (name.includes('_計画書へ転記')) {
             const guide = document.createElement('div');
             guide.className = 'count-guide count-blue';
@@ -160,7 +160,6 @@ function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
-    // 1. PDFリンク（データがある時だけ）
     if (data["PDFリンク"] && data["PDFリンク"].startsWith("http")) {
         const a = document.createElement('a');
         a.href = data["PDFリンク"]; a.target = "_blank"; a.className = "btn-send";
@@ -170,19 +169,15 @@ function updateFaceTab(data) {
     }
 
     const media = document.createElement('div');
-    
-    // --- 修正：田中様が使用している「face情報」と「動画」のみを参照 ---
     const faceUrl = data["face情報"];
     const movieUrl = data["動画"];
 
-    // 2. Face画像
     if (faceUrl && faceUrl.startsWith("http")) {
         const imgId = faceUrl.match(/[-\w]{25,}/);
         const src = imgId ? `https://drive.google.com/thumbnail?id=${imgId[0]}&sz=w1000` : faceUrl;
         media.innerHTML += `<label>Face画像</label><img src="${src}" style="width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd;">`;
     }
 
-    // 3. 動画（YouTube共有リンク対応）
     if (movieUrl) {
         let vId = "";
         if (movieUrl.includes("youtu.be/")) {
@@ -192,7 +187,6 @@ function updateFaceTab(data) {
         } else if (movieUrl.includes("embed/")) {
             vId = movieUrl.split("embed/")[1].split(/[?#]/)[0];
         }
-
         if (vId) {
             media.innerHTML += `<label>動作動画（YouTube）</label><iframe width="100%" height="250" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen style="border-radius:8px; margin-bottom:20px;"></iframe>`;
         }
@@ -248,13 +242,11 @@ async function searchData() {
         if (!res || !res.data) return alert("過去データが見つかりませんでした");
         const data = res.data;
 
-        // 保存されたデータでFaceタブと隠しフィールドを更新
         updateFaceTab(data);
         document.querySelectorAll('#mainForm [name], #mainForm input[type="hidden"]').forEach(el => {
             if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
         });
 
-        // ICF同期
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -270,7 +262,7 @@ async function searchData() {
             }
         }
         updateTotalCount();
-        alert("過去データを呼び出しました。当時の画像・動画を表示しています。");
+        alert("過去データを同期しました。");
     });
 }
 
@@ -285,7 +277,13 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
     .then(res => {
-        alert("送信完了しました。");
+        if (res.includes("SUCCESS")) {
+            alert("送信完了しました。");
+            document.getElementById('mainForm').reset();
+            window.scrollTo(0,0);
+        } else {
+            alert("送信結果: " + res);
+        }
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     })
     .catch(err => {
