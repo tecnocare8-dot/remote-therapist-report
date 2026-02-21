@@ -138,35 +138,116 @@ function render(config) {
     initICF();
 }
 
+// --- 修正箇所1: Face情報表示ロジックの確実な修復 ---
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
+    if (!faceArea) return;
+    
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
-    if (data["PDFリンク"]) {
+    // PDFリンクの表示（dataシートの最新URL）
+    if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
         const a = document.createElement('a');
-        a.href = data["PDFリンク"]; a.target = "_blank"; a.className = "btn-send";
-        a.style = "display:block; text-align:center; text-decoration:none; background:#34a853; margin-bottom:25px; padding:15px; border-radius:8px; color:white;";
+        a.href = data["PDFリンク"];
+        a.target = "_blank";
+        a.className = "btn-send";
+        a.style = "display:block; text-align:center; text-decoration:none; background:#34a853; margin-bottom:25px; padding:15px; border-radius:8px; color:white; font-weight:bold;";
         a.innerText = "📄 最新のPDF報告書を開く";
         faceArea.appendChild(a);
     }
 
     const media = document.createElement('div');
-    const faceUrl = data["face情報"] || data["顔写真"];
-    const movieUrl = data["動画"];
+    
+    // データ列名「face情報」
+    const faceUrl = data["face情報"] ||  "";
+    const movieUrl = data["動画"] || "";
 
+    // 1. Face画像の描画（GoogleドライブのサムネイルURL変換）
     if (faceUrl && faceUrl.startsWith("http")) {
-        const imgId = faceUrl.match(/[-\w]{25,}/);
-        const src = imgId ? `https://drive.google.com/thumbnail?id=${imgId[0]}&sz=w1000` : faceUrl;
-        media.innerHTML += `<label>Face画像</label><img src="${src}" style="width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd;">`;
+        const imgIdMatch = faceUrl.match(/[-\w]{25,}/);
+        const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : faceUrl;
+        
+        const imgLabel = document.createElement('label');
+        imgLabel.innerText = "Face画像";
+        media.appendChild(imgLabel);
+        
+        const img = document.createElement('img');
+        img.src = src;
+        img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
+        media.appendChild(img);
     }
 
+    // 2. 動画の描画（YouTube埋め込み）
     if (movieUrl) {
         let vId = "";
-        if (movieUrl.includes("youtu.be/")) vId = movieUrl.split("youtu.be/")[1].split(/[?#]/)[0];
-        else if (movieUrl.includes("v=")) vId = movieUrl.split("v=")[1].split("&")[0];
-        if (vId) media.innerHTML += `<label>動作動画（YouTube）</label><iframe width="100%" height="250" src="https://www.youtube.com/embed/${vId}" frameborder="0" allowfullscreen style="border-radius:8px;"></iframe>`;
+        if (movieUrl.includes("youtu.be/")) {
+            vId = movieUrl.split("youtu.be/")[1].split(/[?#]/)[0];
+        } else if (movieUrl.includes("v=")) {
+            vId = movieUrl.split("v=")[1].split("&")[0];
+        } else if (movieUrl.includes("embed/")) {
+            vId = movieUrl.split("embed/")[1].split(/[?#]/)[0];
+        }
+
+        if (vId) {
+            const vidLabel = document.createElement('label');
+            vidLabel.innerText = "動作動画（YouTube）";
+            media.appendChild(vidLabel);
+            
+            const iframe = document.createElement('iframe');
+            iframe.width = "100%";
+            iframe.height = "250";
+            iframe.src = `https://www.youtube.com/embed/${vId}`;
+            iframe.frameBorder = "0";
+            iframe.allowFullscreen = true;
+            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
+            media.appendChild(iframe);
+        }
+    }
+
+    if (media.childNodes.length === 0) {
+        media.innerHTML = '<div class="no-data-msg">表示できる画像・動画がありません</div>';
     }
     faceArea.appendChild(media);
+}
+
+// --- 修正箇所2: 検索成功時に確実にタブを更新するよう追加 ---
+async function searchData() {
+    const email = document.getElementById('search-email').value;
+    if (!email) return alert("アドレス入力");
+    
+    document.getElementById('loading').style.display = 'block';
+    callGAS({ action: 'find', email: email }, async (res) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!res || !res.data) return alert("データがありません");
+        
+        const data = res.data;
+        
+        // 【重要】ここで取得した全データを渡してFaceタブを再描画する
+        updateFaceTab(data);
+
+        // フォームへの値セット（既存ロジック維持）
+        document.querySelectorAll('#mainForm [name]').forEach(el => {
+            if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+        });
+
+        // ICF同期ロジック（既存ロジック維持）
+        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
+        for (const major of icfMajors) {
+            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
+            if (mVal) {
+                major.value = mVal; syncICF(major);
+                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+                await pollForValue(middle, String(data[middle.name]||"").trim());
+                if (middle && middle.value) {
+                    syncICF(middle);
+                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+                    if(minor) await pollForValue(minor, String(data[minor.name]||"").trim());
+                }
+            }
+        }
+        updateTotalCount();
+        alert("過去データを同期しました。Faceタブで内容を確認してください。");
+    });
 }
 
 // 【復元】3部位制限と文字数カウントの完全ロジック
