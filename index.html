@@ -77,6 +77,7 @@ window.onload = () => {
         icf_data.function = data.function_lists || [];
         currentConfig = data.config || [];
         render(currentConfig);
+        updateFaceTab(defaultConfigValues); // ← この1行があると初期状態でも画像が出ます
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
         updateTotalCount();
