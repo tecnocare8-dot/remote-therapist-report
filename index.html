@@ -51,7 +51,7 @@
 </div>
 
 <script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwQtRsEKsjju2ttEetCKEXtIWNj8NPNwgKZkLw7FtTWvYhPfEff-mUqTROJuk9wNsZa/exec"; 
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwjdrOogd1lg41DqmM9rCliom6AOMwuMqueE97SDZbAmeANwuwmXBYKG89DirF5-iFy/exec"; 
 let icf_data = { participation: [], activity: [], function: [] };
 let currentConfig = [];
 
@@ -76,8 +76,19 @@ window.onload = () => {
         icf_data.activity = data.activity_lists || [];
         icf_data.function = data.function_lists || [];
         currentConfig = data.config || [];
+        
+        // --- 修正箇所：defaultConfigValues の定義不足を解消 ---
+        let defaultConfigValues = {};
+        currentConfig.forEach(row => {
+            const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4];
+            if (type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真") {
+                defaultConfigValues[name] = url;
+            }
+        });
+
         render(currentConfig);
-        updateFaceTab(defaultConfigValues); // ← この1行があると初期状態でも画像が出ます
+        updateFaceTab(defaultConfigValues);
+        
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
         updateTotalCount();
@@ -125,7 +136,6 @@ function render(config) {
         input.name = name;
         group.appendChild(input);
 
-        // 【復元】ガイドとカウンター
         if (name.includes('_計画書へ転記')) {
             const guide = document.createElement('div'); guide.className = 'count-guide count-blue'; guide.id = `guide-${name}`;
             group.appendChild(guide);
@@ -139,14 +149,12 @@ function render(config) {
     initICF();
 }
 
-// --- 修正箇所1: Face情報表示ロジックの確実な修復 ---
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
     
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
-    // PDFリンクの表示（dataシートの最新URL）
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
         const a = document.createElement('a');
         a.href = data["PDFリンク"];
@@ -158,12 +166,9 @@ function updateFaceTab(data) {
     }
 
     const media = document.createElement('div');
-    
-    // データ列名「face情報」
-    const faceUrl = data["face情報"] ||  "";
+    const faceUrl = data["face情報"] || data["顔写真"] || "";
     const movieUrl = data["動画"] || "";
 
-    // 1. Face画像の描画（GoogleドライブのサムネイルURL変換）
     if (faceUrl && faceUrl.startsWith("http")) {
         const imgIdMatch = faceUrl.match(/[-\w]{25,}/);
         const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : faceUrl;
@@ -178,28 +183,20 @@ function updateFaceTab(data) {
         media.appendChild(img);
     }
 
-    // 2. 動画の描画（YouTube埋め込み）
     if (movieUrl) {
         let vId = "";
-        if (movieUrl.includes("youtu.be/")) {
-            vId = movieUrl.split("youtu.be/")[1].split(/[?#]/)[0];
-        } else if (movieUrl.includes("v=")) {
-            vId = movieUrl.split("v=")[1].split("&")[0];
-        } else if (movieUrl.includes("embed/")) {
-            vId = movieUrl.split("embed/")[1].split(/[?#]/)[0];
-        }
+        if (movieUrl.includes("youtu.be/")) vId = movieUrl.split("youtu.be/")[1].split(/[?#]/)[0];
+        else if (movieUrl.includes("v=")) vId = movieUrl.split("v=")[1].split("&")[0];
+        else if (movieUrl.includes("embed/")) vId = movieUrl.split("embed/")[1].split(/[?#]/)[0];
 
         if (vId) {
             const vidLabel = document.createElement('label');
             vidLabel.innerText = "動作動画（YouTube）";
             media.appendChild(vidLabel);
-            
             const iframe = document.createElement('iframe');
-            iframe.width = "100%";
-            iframe.height = "250";
+            iframe.width = "100%"; iframe.height = "250";
             iframe.src = `https://www.youtube.com/embed/${vId}`;
-            iframe.frameBorder = "0";
-            iframe.allowFullscreen = true;
+            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
             iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
             media.appendChild(iframe);
         }
@@ -211,47 +208,7 @@ function updateFaceTab(data) {
     faceArea.appendChild(media);
 }
 
-// --- 修正箇所2: 検索成功時に確実にタブを更新するよう追加 ---
-async function searchData() {
-    const email = document.getElementById('search-email').value;
-    if (!email) return alert("アドレス入力");
-    
-    document.getElementById('loading').style.display = 'block';
-    callGAS({ action: 'find', email: email }, async (res) => {
-        document.getElementById('loading').style.display = 'none';
-        if (!res || !res.data) return alert("データがありません");
-        
-        const data = res.data;
-        
-        // 【重要】ここで取得した全データを渡してFaceタブを再描画する
-        updateFaceTab(data);
-
-        // フォームへの値セット（既存ロジック維持）
-        document.querySelectorAll('#mainForm [name]').forEach(el => {
-            if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
-        });
-
-        // ICF同期ロジック（既存ロジック維持）
-        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
-        for (const major of icfMajors) {
-            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
-            if (mVal) {
-                major.value = mVal; syncICF(major);
-                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-                await pollForValue(middle, String(data[middle.name]||"").trim());
-                if (middle && middle.value) {
-                    syncICF(middle);
-                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-                    if(minor) await pollForValue(minor, String(data[minor.name]||"").trim());
-                }
-            }
-        }
-        updateTotalCount();
-        alert("過去データを同期しました。Faceタブで内容を確認してください。");
-    });
-}
-
-// 【復元】3部位制限と文字数カウントの完全ロジック
+// 3部位制限と文字数カウントのロジック
 function updateTotalCount() {
     const targetParts = ["体幹", "肩", "肘手首", "ひざ", "股関節足首"];
     const allTenki = Array.from(document.querySelectorAll('select[name*="_計画書へ転記"]'));
@@ -286,18 +243,24 @@ function updateTotalCount() {
     });
 }
 
+// 患者データ検索
 async function searchData() {
     const email = document.getElementById('search-email').value;
-    if (!email) return alert("アドレス入力");
+    if (!email) return alert("メールアドレスを入力してください");
+    
+    document.getElementById('loading').style.display = 'block';
     callGAS({ action: 'find', email: email }, async (res) => {
+        document.getElementById('loading').style.display = 'none';
         if (!res || !res.data) return alert("データがありません");
+        
         const data = res.data;
         updateFaceTab(data);
+
         document.querySelectorAll('#mainForm [name]').forEach(el => {
             if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
         });
 
-        // 【復元】ICFの階層同期を伴う検索結果の反映
+        // ICFの階層同期を伴う検索結果の反映
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -313,7 +276,7 @@ async function searchData() {
             }
         }
         updateTotalCount();
-        alert("過去データを同期しました。Faceタブを確認してください。");
+        alert("過去データを同期しました。Faceタブで内容を確認してください。");
     });
 }
 
@@ -327,11 +290,18 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
     .then(res => {
-        alert("送信完了しました。");
-        document.getElementById('mainForm').reset();
-        window.scrollTo(0,0);
+        if (res.includes("SUCCESS")) {
+            alert("送信完了しました。");
+            document.getElementById('mainForm').reset();
+            window.scrollTo(0,0);
+        } else {
+            alert("送信結果: " + res);
+        }
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
-    }).catch(e => { alert("通信エラー"); btn.disabled = false; });
+    }).catch(e => { 
+        alert("通信エラー: " + e); 
+        btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
+    });
 }
 
 function switchTab(id, btn) {
