@@ -15,16 +15,40 @@
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        
+        /* 検索窓の横並び用レイアウト */
+        .search-flex { display: flex; gap: 8px; margin-top: 8px; }
+        .search-flex input { margin-top: 0; flex: 1; }
+        .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         .count-guide { font-size: 12px; margin-top: 5px; font-weight: bold; display: block; min-height: 1.2em; }
         .count-blue { color: #1a73e8; }
         .count-red { color: #d93025; }
         .no-data-msg { color: #888; font-size: 14px; font-weight: bold; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; text-align: center; margin-top: 10px; }
-        /* 検索アラートのスタイル */
         #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
+
+        /* 送信中オーバーレイのスタイル */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 2000;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            color: white; font-weight: bold;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3);
+            border-top: 5px solid white; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+
+<div id="overlay">
+    <div class="spinner"></div>
+    <div>送信中... しばらくお待ちください</div>
+</div>
 
 <div class="tab-menu">
     <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
@@ -35,8 +59,10 @@
     <div class="container">
         <div class="search-area">
             <label>患者データ検索（メールアドレス）</label>
-            <input type="email" id="search-email" placeholder="example@gmail.com">
-            <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して情報を同期</button>
+            <div class="search-flex">
+                <input type="email" id="search-email" placeholder="example@gmail.com">
+                <button type="button" class="btn-search" onclick="searchData()">検索</button>
+            </div>
             <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
         </div>
         <div id="loading">接続中...</div>
@@ -162,14 +188,12 @@ function render(config) {
     initICF();
 }
 
-// 修正：Faceタブの更新（PDF埋め込み対応）
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
     
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
-    // PDFリンクが存在する場合、最上段にスライダー付きで埋め込む
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
         const pdfUrl = data["PDFリンク"];
         const embedUrl = pdfUrl.replace(/\/view\?usp=sharing|\/view/g, '/preview');
@@ -266,13 +290,12 @@ function updateTotalCount() {
     });
 }
 
-// 修正：検索Data関数（赤字アラートの制御を追加）
 async function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
     
-    alertEl.style.display = 'none'; // 検索開始時に隠す
+    alertEl.style.display = 'none'; 
     document.getElementById('loading').style.display = 'block';
 
     callGAS({ action: 'find', email: email }, async (res) => {
@@ -281,7 +304,6 @@ async function searchData() {
         
         const data = res.data;
 
-        // PDFがある場合のみ赤字アラートを表示
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
             alertEl.style.display = 'block';
         }
@@ -313,6 +335,10 @@ async function searchData() {
 
 function sendData() {
     if (!confirm("送信しますか？")) return;
+    
+    // 修正：オーバーレイを表示して入力をロック
+    document.getElementById('overlay').style.display = 'flex';
+    
     const btn = document.querySelector('.btn-send');
     btn.disabled = true; btn.innerText = "送信中...";
     const payload = {};
@@ -321,16 +347,20 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
     .then(res => {
+        // 修正：アラートが出る前にオーバーレイを隠す
+        document.getElementById('overlay').style.display = 'none';
+        
         if (res.includes("SUCCESS")) {
             alert("送信完了しました。");
             document.getElementById('mainForm').reset();
-            document.getElementById('search-alert').style.display = 'none'; // 送信後はアラートを消す
+            document.getElementById('search-alert').style.display = 'none'; 
             window.scrollTo(0,0);
         } else {
             alert("送信結果: " + res);
         }
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     }).catch(e => { 
+        document.getElementById('overlay').style.display = 'none';
         alert("通信エラー: " + e); 
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     });
@@ -356,7 +386,7 @@ function syncICF(target) {
     } else if (lv === 'middle' && minor) {
         minor.innerHTML = '<option value="">-- 選択 --</option>';
         list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v)); });
+            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v))); });
     }
 }
 
