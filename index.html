@@ -20,6 +20,8 @@
         .count-blue { color: #1a73e8; }
         .count-red { color: #d93025; }
         .no-data-msg { color: #888; font-size: 14px; font-weight: bold; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; text-align: center; margin-top: 10px; }
+        /* 検索アラートのスタイル */
+        #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
@@ -35,6 +37,7 @@
             <label>患者データ検索（メールアドレス）</label>
             <input type="email" id="search-email" placeholder="example@gmail.com">
             <button type="button" class="btn-send" style="padding:10px; font-size:14px;" onclick="searchData()">検索して情報を同期</button>
+            <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
         </div>
         <div id="loading">接続中...</div>
         <form id="mainForm" style="display:none;">
@@ -77,7 +80,6 @@ window.onload = () => {
         icf_data.function = data.function_lists || [];
         currentConfig = data.config || [];
         
-        // --- 修正箇所：defaultConfigValues の定義不足を解消 ---
         let defaultConfigValues = {};
         currentConfig.forEach(row => {
             const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4];
@@ -101,12 +103,10 @@ function render(config) {
     
     config.forEach(row => {
         let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3];
-        // ★修正：E列（画像URL）を取得
         let imageUrl = row[4]; 
 
         if (!name || name === "項目名" || name === "PDFリンク") return;
 
-        // 非表示条件（優先項目、画像・動画系）
         if (name.includes('優先') || type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真" || name === "動画") {
             const hidden = document.createElement('input');
             hidden.type = 'hidden'; hidden.name = name; hidden.value = row[4] || "";
@@ -117,7 +117,6 @@ function render(config) {
         const group = document.createElement('div'); group.className = 'field-group';
         group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
-        // ★微調整：項目名に「_課題」が含まれ、かつ画像URLがある場合、セレクトボックスの上段に画像を表示
         if (name.includes('_課題') && imageUrl && imageUrl.startsWith('http')) {
             const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
             const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
@@ -163,20 +162,31 @@ function render(config) {
     initICF();
 }
 
+// 修正：Faceタブの更新（PDF埋め込み対応）
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
     
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
+    // PDFリンクが存在する場合、最上段にスライダー付きで埋め込む
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
-        const a = document.createElement('a');
-        a.href = data["PDFリンク"];
-        a.target = "_blank";
-        a.className = "btn-send";
-        a.style = "display:block; text-align:center; text-decoration:none; background:#34a853; margin-bottom:25px; padding:15px; border-radius:8px; color:white; font-weight:bold;";
-        a.innerText = "📄 最新のPDF報告書を開く";
-        faceArea.appendChild(a);
+        const pdfUrl = data["PDFリンク"];
+        const embedUrl = pdfUrl.replace(/\/view\?usp=sharing|\/view/g, '/preview');
+
+        const pdfLabel = document.createElement('label');
+        pdfLabel.innerText = "過去のレポートPDF（上下にスクロールできます）";
+        faceArea.appendChild(pdfLabel);
+
+        const pdfContainer = document.createElement('div');
+        pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px; -webkit-overflow-scrolling:touch;";
+        
+        const iframe = document.createElement('iframe');
+        iframe.src = embedUrl;
+        iframe.style = "width:100%; height:100%; border:none;";
+        
+        pdfContainer.appendChild(iframe);
+        faceArea.appendChild(pdfContainer);
     }
 
     const media = document.createElement('div');
@@ -216,13 +226,12 @@ function updateFaceTab(data) {
         }
     }
 
-    if (media.childNodes.length === 0) {
-        media.innerHTML = '<div class="no-data-msg">表示できる画像・動画がありません</div>';
+    if (media.childNodes.length === 0 && !data["PDFリンク"]) {
+        media.innerHTML = '<div class="no-data-msg">表示できる情報がありません</div>';
     }
     faceArea.appendChild(media);
 }
 
-// 3部位制限と文字数カウントのロジック
 function updateTotalCount() {
     const targetParts = ["体幹", "肩", "肘手首", "ひざ", "股関節足首"];
     const allTenki = Array.from(document.querySelectorAll('select[name*="_計画書へ転記"]'));
@@ -257,24 +266,32 @@ function updateTotalCount() {
     });
 }
 
-// 患者データ検索
+// 修正：検索Data関数（赤字アラートの制御を追加）
 async function searchData() {
     const email = document.getElementById('search-email').value;
+    const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
     
+    alertEl.style.display = 'none'; // 検索開始時に隠す
     document.getElementById('loading').style.display = 'block';
+
     callGAS({ action: 'find', email: email }, async (res) => {
         document.getElementById('loading').style.display = 'none';
         if (!res || !res.data) return alert("データがありません");
         
         const data = res.data;
+
+        // PDFがある場合のみ赤字アラートを表示
+        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
+            alertEl.style.display = 'block';
+        }
+
         updateFaceTab(data);
 
         document.querySelectorAll('#mainForm [name]').forEach(el => {
             if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
         });
 
-        // ICFの階層同期を伴う検索結果の反映
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -307,6 +324,7 @@ function sendData() {
         if (res.includes("SUCCESS")) {
             alert("送信完了しました。");
             document.getElementById('mainForm').reset();
+            document.getElementById('search-alert').style.display = 'none'; // 送信後はアラートを消す
             window.scrollTo(0,0);
         } else {
             alert("送信結果: " + res);
