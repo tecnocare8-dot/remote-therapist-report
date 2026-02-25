@@ -101,6 +101,9 @@ function render(config) {
     
     config.forEach(row => {
         let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3];
+        // ★修正：E列（画像URL）を取得
+        let imageUrl = row[4]; 
+
         if (!name || name === "項目名" || name === "PDFリンク") return;
 
         // 非表示条件（優先項目、画像・動画系）
@@ -113,6 +116,17 @@ function render(config) {
 
         const group = document.createElement('div'); group.className = 'field-group';
         group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
+
+        // ★微調整：項目名に「_課題」が含まれ、かつ画像URLがある場合、セレクトボックスの上段に画像を表示
+        if (name.includes('_課題') && imageUrl && imageUrl.startsWith('http')) {
+            const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
+            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
+            
+            const img = document.createElement('img');
+            img.src = src;
+            img.style = "width:100%; border-radius:8px; margin-top:10px; border:1px solid #ddd; display:block;";
+            group.appendChild(img);
+        }
 
         let input;
         if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
