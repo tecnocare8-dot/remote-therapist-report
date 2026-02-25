@@ -28,7 +28,7 @@
         .no-data-msg { color: #888; font-size: 14px; font-weight: bold; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; text-align: center; margin-top: 10px; }
         #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
 
-        /* 送信中オーバーレイのスタイル */
+        /* 送信中オーバーレイ */
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.6); z-index: 2000;
@@ -303,11 +303,9 @@ async function searchData() {
         if (!res || !res.data) return alert("データがありません");
         
         const data = res.data;
-
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
             alertEl.style.display = 'block';
         }
-
         updateFaceTab(data);
 
         document.querySelectorAll('#mainForm [name]').forEach(el => {
@@ -335,10 +333,7 @@ async function searchData() {
 
 function sendData() {
     if (!confirm("送信しますか？")) return;
-    
-    // 修正：オーバーレイを表示して入力をロック
     document.getElementById('overlay').style.display = 'flex';
-    
     const btn = document.querySelector('.btn-send');
     btn.disabled = true; btn.innerText = "送信中...";
     const payload = {};
@@ -347,9 +342,7 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
     .then(res => {
-        // 修正：アラートが出る前にオーバーレイを隠す
         document.getElementById('overlay').style.display = 'none';
-        
         if (res.includes("SUCCESS")) {
             alert("送信完了しました。");
             document.getElementById('mainForm').reset();
@@ -386,7 +379,7 @@ function syncICF(target) {
     } else if (lv === 'middle' && minor) {
         minor.innerHTML = '<option value="">-- 選択 --</option>';
         list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v))); });
+            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v)); });
     }
 }
 
