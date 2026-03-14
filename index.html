@@ -11,7 +11,6 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         
-        /* フォームタイトルの装飾（新設） */
         .page-header { background: #1a73e8; color: white; padding: 20px 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
         .page-header h1 { margin: 0; font-size: 18px; letter-spacing: 0.05em; line-height: 1.4; }
 
@@ -19,7 +18,6 @@
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background-color: #fff; }
         
-        /* チェックボックス（新設） */
         .checkbox-group { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 10px 0; }
         .checkbox-group input[type="checkbox"] { width: 26px; height: 26px; cursor: pointer; margin-top: 0; }
         .checkbox-group label { margin-top: 0; cursor: pointer; flex: 1; font-weight: bold; }
@@ -81,9 +79,9 @@
 /**
  * ★設定項目
  */
-let activeFormId = "a"; // 初期値。URLの ?id=... で自動上書きされます
-const MEDIA_THRESHOLD = 9; // 1-9番はFace情報、10番以上は入力フォームへ
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwKEdQjZVrAgpF69mGPfKIHwNkALtL-HUB1DCL-CuFwJ5ZqEZbbH6EAI2pbHO-606lE/exec"; 
+let activeFormId = "a"; 
+const MEDIA_THRESHOLD = 9; 
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxvwAj43oippbLMsiIb8rmO0GdYYN4BOUOzExeKw6sxh99gqcNxaMRo3r6NRVLaIPsm/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
 
@@ -102,7 +100,6 @@ function callGAS(params, callback) {
     document.body.appendChild(script);
 }
 
-// URLパラメータからIDを取得
 function getFormIdFromUrl() {
     const params = new URLSearchParams(window.location.search);
     return params.get('id') || 'a';
@@ -117,9 +114,7 @@ window.onload = () => {
         icf_data.function = data.function_lists || [];
         
         const configRows = data.config || [];
-        const headers = configRows[0]; // 1行目（見出し）
-        
-        // 自分のフォームIDに対応する列（Form_aなど）を探す
+        const headers = configRows[0]; 
         const orderIdx = headers.findIndex(h => String(h).toLowerCase().includes("form_" + activeFormId));
         
         if (orderIdx === -1) {
@@ -127,16 +122,16 @@ window.onload = () => {
             return;
         }
 
-        // ページタイトルの動的取得 (form_title_a等)
-        const titleTag = "form_title_" + activeFormId;
-        const titleRow = configRows.find(r => String(r[0]).toLowerCase() === titleTag);
+        const titleRow = configRows.find(row => {
+            const key = String(row[0]).toLowerCase();
+            return key === "form_title_" + activeFormId || key === "orm_title_" + activeFormId;
+        });
         if (titleRow && titleRow[orderIdx]) {
             const t = titleRow[orderIdx];
             document.getElementById('display-title').innerText = t;
             document.title = t;
         }
 
-        // 項目仕分け用バケツ
         let inputItems = [];
         let mediaItems = [];
 
@@ -145,7 +140,6 @@ window.onload = () => {
             const rawVal = row[orderIdx];
             const orderNum = Number(rawVal);
             
-            // 数値が入っていない行（タイトル行や空欄）はスキップ
             if (!rawVal || isNaN(orderNum)) continue;
 
             const itemObj = { 
@@ -162,14 +156,11 @@ window.onload = () => {
             else inputItems.push(itemObj);
         }
 
-        // 数字順にソート
         inputItems.sort((a, b) => a.order - b.order);
         mediaItems.sort((a, b) => a.order - b.order);
 
-        // 描画実行
         render(inputItems);
         
-        // メディア項目の表示（Face情報タブ）
         let mediaDataMap = { "PDFリンク": data.last_pdf_link || "" }; 
         mediaItems.forEach(item => { mediaDataMap[item.name] = item.url; });
         updateFaceTab(mediaDataMap);
@@ -187,7 +178,6 @@ function render(items) {
     items.forEach(item => {
         const name = item.name, type = item.type, options = item.options, limit = item.limit, imageUrl = item.url;
 
-        // 隠し項目の処理
         if (name.includes('優先') || type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真" || name === "動画") {
             const hidden = document.createElement('input');
             hidden.type = 'hidden'; hidden.name = name; hidden.value = imageUrl || "";
@@ -200,22 +190,21 @@ function render(items) {
         
         let input;
         if (type === 'checkbox') {
-            // チェックボックス形式
             group.classList.add('checkbox-group');
             input = document.createElement('input');
             input.type = 'checkbox';
             input.id = `check-${name}`;
-            input.dataset.onValue = options[0] || "★"; // 選択肢1つ目がONの値
+            input.dataset.onValue = options[0] || "★"; 
             const label = document.createElement('label');
             label.htmlFor = input.id;
             label.innerText = name;
             group.appendChild(input);
             group.appendChild(label);
         } else {
-            // 通常項目
             group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
-            if (name.includes('_課題') && imageUrl && imageUrl.startsWith('http')) {
+            // ★修正ポイント：名前の判定（_課題）を外し、URLがあれば無条件でガイド画像を表示する
+            if (imageUrl && imageUrl.startsWith('http')) {
                 const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
                 const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
                 const img = document.createElement('img');
@@ -259,7 +248,6 @@ function render(items) {
     initICF();
 }
 
-// Face情報タブの描画（既存ロジックを流用）
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
@@ -314,7 +302,6 @@ function searchData() {
     alertEl.style.display = 'none'; 
     document.getElementById('loading').style.display = 'block';
 
-    // 検索時もフォームIDをセットで送る
     callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
         document.getElementById('loading').style.display = 'none';
         if (!res || !res.data) return alert("このフォームでの履歴はありません");
@@ -381,9 +368,6 @@ function sendData() {
     });
 }
 
-// ------------------------------------------------------------
-// 以降、変更なしの共通ロジック（ICF/カウントなど）
-// ------------------------------------------------------------
 function updateTotalCount() {
     const targetParts = ["体幹", "肩", "肘手首", "ひざ", "股関節足首"];
     const allTenki = Array.from(document.querySelectorAll('select[name*="_計画書へ転記"]'));
