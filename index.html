@@ -11,12 +11,14 @@
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         
-        .page-header { background: #1a73e8; color: white; padding: 20px 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
-        .page-header h1 { margin: 0; font-size: 18px; letter-spacing: 0.05em; line-height: 1.4; }
+        /* ヘッダーデザイン：ブランド名を小さく、フォーム名を大きく表示 */
+        .page-header { background: #1a73e8; color: white; padding: 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
+        .brand-label { font-size: 11px; opacity: 0.8; letter-spacing: 0.1em; margin-bottom: 4px; display: block; font-weight: bold; }
+        .page-header h1 { margin: 0; font-size: 19px; letter-spacing: 0.02em; line-height: 1.4; }
 
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background-color: #fff; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background-color: #fff; -webkit-appearance: none; }
         
         .checkbox-group { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 10px 0; }
         .checkbox-group input[type="checkbox"] { width: 26px; height: 26px; cursor: pointer; margin-top: 0; }
@@ -52,8 +54,11 @@
 
 <div id="tab-input" class="tab-content">
     <div class="container" style="padding:0; overflow:hidden;">
-        <!-- フォームタイトル -->
-        <div class="page-header"><h1 id="display-title">Remote Therapist®</h1></div>
+        <!-- ヘッダー：ブランド名と動的タイトルを表示 -->
+        <div class="page-header">
+            <span class="brand-label">Remote Therapist®</span>
+            <h1 id="display-title">レポートシステム</h1>
+        </div>
         
         <div style="padding:20px;">
             <div class="search-area">
@@ -122,14 +127,18 @@ window.onload = () => {
             return;
         }
 
+        // ★ タイトル取得（田中様の「metaデータとして入力するルール」を反映）
         const titleRow = configRows.find(row => {
-            const key = String(row[0]).toLowerCase();
+            const key = String(row[0] || "").toLowerCase().trim();
+            // form_title_a または orm_title_a というキーワードで検索
             return key === "form_title_" + activeFormId || key === "orm_title_" + activeFormId;
         });
+
+        // 見つかったら、並び順列（metaデータ）に書かれたタイトルを表示
         if (titleRow && titleRow[orderIdx]) {
-            const t = titleRow[orderIdx];
-            document.getElementById('display-title').innerText = t;
-            document.title = t;
+            const finalTitle = String(titleRow[orderIdx]).trim();
+            document.getElementById('display-title').innerText = finalTitle;
+            document.title = finalTitle + " | Remote Therapist®";
         }
 
         let inputItems = [];
@@ -140,12 +149,13 @@ window.onload = () => {
             const rawVal = row[orderIdx];
             const orderNum = Number(rawVal);
             
+            // 数値が入っていない行（タイトル設定行や空欄など）はスキップして入力項目にしない
             if (!rawVal || isNaN(orderNum)) continue;
 
             const itemObj = { 
                 row: row, 
                 name: row[0], 
-                type: String(row[1]).trim().toLowerCase(), 
+                type: String(row[1] || "").trim().toLowerCase(), 
                 options: row[2] ? String(row[2]).split(',') : [], 
                 limit: row[3],
                 url: row[4],
@@ -203,7 +213,7 @@ function render(items) {
         } else {
             group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
-            // ★修正ポイント：名前の判定（_課題）を外し、URLがあれば無条件でガイド画像を表示する
+            // ★ 画像表示：E列（imageUrl）に値があれば無条件で表示する
             if (imageUrl && imageUrl.startsWith('http')) {
                 const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
                 const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
@@ -240,7 +250,7 @@ function render(items) {
             group.appendChild(guide);
         }
         if ((type === 'textarea' || type === 'testarea') && limit) {
-            const counter = document.createElement('div'); counter.id = `counter-${name}`; counter.className = 'count-guide';
+            const counter = document.getElementById(`counter-${name}`); counter.className = 'count-guide';
             group.appendChild(counter);
         }
         fieldsDiv.appendChild(group);
@@ -266,9 +276,7 @@ function updateFaceTab(data) {
     Object.keys(data).forEach(key => {
         const url = data[key];
         if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
-
         const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
-        
         if (url.includes("youtu")) {
             let vId = "";
             if (url.includes("youtu.be/")) vId = url.split("youtu.be/")[1].split(/[?#]/)[0];
@@ -298,25 +306,19 @@ function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
-    
-    alertEl.style.display = 'none'; 
-    document.getElementById('loading').style.display = 'block';
-
+    alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
     callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
         document.getElementById('loading').style.display = 'none';
         if (!res || !res.data) return alert("このフォームでの履歴はありません");
-        
         const data = res.data;
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
         updateFaceTab(data);
-
         document.querySelectorAll('#mainForm [name]').forEach(el => {
             if (data[el.name] !== undefined && !el.dataset.lv) {
                 if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
                 else el.value = data[el.name];
             }
         });
-
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -341,30 +343,19 @@ function sendData() {
     document.getElementById('overlay').style.display = 'flex';
     const btn = document.querySelector('.btn-send');
     btn.disabled = true; btn.innerText = "送信中...";
-
     const payload = { "form_id": activeFormId };
     document.querySelectorAll('#mainForm [name]').forEach(el => {
         if (el.type === 'checkbox') payload[el.name] = el.checked ? (el.dataset.onValue || "★") : "";
         else payload[el.name] = el.value;
     });
-
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
-    .then(r => r.text())
-    .then(res => {
+    .then(r => r.text()).then(res => {
         document.getElementById('overlay').style.display = 'none';
-        if (res.includes("SUCCESS")) {
-            alert("送信完了しました。");
-            document.getElementById('mainForm').reset();
-            document.getElementById('search-alert').style.display = 'none'; 
-            window.scrollTo(0,0);
-        } else {
-            alert("エラー: " + res);
-        }
+        alert(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     }).catch(e => { 
         document.getElementById('overlay').style.display = 'none';
-        alert("通信エラー: " + e); 
-        btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
+        alert("通信エラー: " + e); btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     });
 }
 
