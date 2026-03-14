@@ -10,13 +10,22 @@
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        /* フォームタイトルの装飾（新設） */
+        .page-header { background: #1a73e8; color: white; padding: 20px 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
+        .page-header h1 { margin: 0; font-size: 18px; letter-spacing: 0.05em; line-height: 1.4; }
+
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background-color: #fff; }
+        
+        /* チェックボックス（新設） */
+        .checkbox-group { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 10px 0; }
+        .checkbox-group input[type="checkbox"] { width: 26px; height: 26px; cursor: pointer; margin-top: 0; }
+        .checkbox-group label { margin-top: 0; cursor: pointer; flex: 1; font-weight: bold; }
+
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        
-        /* 検索窓の横並び用レイアウト */
         .search-flex { display: flex; gap: 8px; margin-top: 8px; }
         .search-flex input { margin-top: 0; flex: 1; }
         .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
@@ -28,27 +37,15 @@
         .no-data-msg { color: #888; font-size: 14px; font-weight: bold; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; text-align: center; margin-top: 10px; }
         #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
 
-        /* 送信中オーバーレイ */
-        #overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.6); z-index: 2000;
-            display: none; flex-direction: column; align-items: center; justify-content: center;
-            color: white; font-weight: bold;
-        }
-        .spinner {
-            width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3);
-            border-top: 5px solid white; border-radius: 50%;
-            animation: spin 1s linear infinite; margin-bottom: 15px;
-        }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: none; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; }
+        .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-<div id="overlay">
-    <div class="spinner"></div>
-    <div>送信中... しばらくお待ちください</div>
-</div>
+<div id="overlay"><div class="spinner"></div><div>送信中... しばらくお待ちください</div></div>
 
 <div class="tab-menu">
     <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
@@ -56,33 +53,39 @@
 </div>
 
 <div id="tab-input" class="tab-content">
-    <div class="container">
-        <div class="search-area">
-            <label>患者データ検索（メールアドレス）</label>
-            <div class="search-flex">
-                <input type="email" id="search-email" placeholder="example@gmail.com">
-                <button type="button" class="btn-search" onclick="searchData()">検索</button>
+    <div class="container" style="padding:0; overflow:hidden;">
+        <!-- フォームタイトル -->
+        <div class="page-header"><h1 id="display-title">Remote Therapist®</h1></div>
+        
+        <div style="padding:20px;">
+            <div class="search-area">
+                <label>患者データ検索（メールアドレス）</label>
+                <div class="search-flex">
+                    <input type="email" id="search-email" placeholder="example@gmail.com">
+                    <button type="button" class="btn-search" onclick="searchData()">検索</button>
+                </div>
+                <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
             </div>
-            <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
+            <div id="loading">接続中...</div>
+            <form id="mainForm" style="display:none;">
+                <div id="fields"></div>
+                <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF更新</button>
+            </form>
         </div>
-        <div id="loading">接続中...</div>
-        <form id="mainForm" style="display:none;">
-            <div id="fields"></div>
-            <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF更新</button>
-        </form>
     </div>
 </div>
 
-<div id="tab-face" class="tab-content" style="display:none;">
-    <div class="container">
-        <div id="face-img-area"></div>
-    </div>
-</div>
+<div id="tab-face" class="tab-content" style="display:none;"><div class="container"><div id="face-img-area"></div></div></div>
 
 <script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxvwAj43oippbLMsiIb8rmO0GdYYN4BOUOzExeKw6sxh99gqcNxaMRo3r6NRVLaIPsm/exec"; 
+/**
+ * ★設定項目
+ */
+let activeFormId = "a"; // 初期値。URLの ?id=... で自動上書きされます
+const MEDIA_THRESHOLD = 9; // 1-9番はFace情報、10番以上は入力フォームへ
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwKEdQjZVrAgpF69mGPfKIHwNkALtL-HUB1DCL-CuFwJ5ZqEZbbH6EAI2pbHO-606lE/exec"; 
+
 let icf_data = { participation: [], activity: [], function: [] };
-let currentConfig = [];
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
@@ -99,78 +102,146 @@ function callGAS(params, callback) {
     document.body.appendChild(script);
 }
 
+// URLパラメータからIDを取得
+function getFormIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('id') || 'a';
+}
+
 window.onload = () => {
-    callGAS({ action: 'init' }, (data) => {
+    activeFormId = getFormIdFromUrl().toLowerCase();
+
+    callGAS({ action: 'init', id: activeFormId }, (data) => {
         icf_data.participation = data.participation_lists || [];
         icf_data.activity = data.activity_lists || [];
         icf_data.function = data.function_lists || [];
-        currentConfig = data.config || [];
         
-        let defaultConfigValues = {};
-        currentConfig.forEach(row => {
-            const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4];
-            if (type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真") {
-                defaultConfigValues[name] = url;
-            }
-        });
+        const configRows = data.config || [];
+        const headers = configRows[0]; // 1行目（見出し）
+        
+        // 自分のフォームIDに対応する列（Form_aなど）を探す
+        const orderIdx = headers.findIndex(h => String(h).toLowerCase().includes("form_" + activeFormId));
+        
+        if (orderIdx === -1) {
+            document.getElementById('loading').innerText = "エラー: Configシートに 'Form_" + activeFormId + "' 列が見つかりません。";
+            return;
+        }
 
-        render(currentConfig);
-        updateFaceTab(defaultConfigValues);
+        // ページタイトルの動的取得 (form_title_a等)
+        const titleTag = "form_title_" + activeFormId;
+        const titleRow = configRows.find(r => String(r[0]).toLowerCase() === titleTag);
+        if (titleRow && titleRow[orderIdx]) {
+            const t = titleRow[orderIdx];
+            document.getElementById('display-title').innerText = t;
+            document.title = t;
+        }
+
+        // 項目仕分け用バケツ
+        let inputItems = [];
+        let mediaItems = [];
+
+        for (let i = 1; i < configRows.length; i++) {
+            const row = configRows[i];
+            const rawVal = row[orderIdx];
+            const orderNum = Number(rawVal);
+            
+            // 数値が入っていない行（タイトル行や空欄）はスキップ
+            if (!rawVal || isNaN(orderNum)) continue;
+
+            const itemObj = { 
+                row: row, 
+                name: row[0], 
+                type: String(row[1]).trim().toLowerCase(), 
+                options: row[2] ? String(row[2]).split(',') : [], 
+                limit: row[3],
+                url: row[4],
+                order: orderNum 
+            };
+
+            if (orderNum <= MEDIA_THRESHOLD) mediaItems.push(itemObj);
+            else inputItems.push(itemObj);
+        }
+
+        // 数字順にソート
+        inputItems.sort((a, b) => a.order - b.order);
+        mediaItems.sort((a, b) => a.order - b.order);
+
+        // 描画実行
+        render(inputItems);
         
+        // メディア項目の表示（Face情報タブ）
+        let mediaDataMap = { "PDFリンク": data.last_pdf_link || "" }; 
+        mediaItems.forEach(item => { mediaDataMap[item.name] = item.url; });
+        updateFaceTab(mediaDataMap);
+
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
         updateTotalCount();
     });
 };
 
-function render(config) {
+function render(items) {
     const fieldsDiv = document.getElementById('fields');
     fieldsDiv.innerHTML = '';
     
-    config.forEach(row => {
-        let name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = row[3];
-        let imageUrl = row[4]; 
+    items.forEach(item => {
+        const name = item.name, type = item.type, options = item.options, limit = item.limit, imageUrl = item.url;
 
-        if (!name || name === "項目名" || name === "PDFリンク") return;
-
+        // 隠し項目の処理
         if (name.includes('優先') || type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真" || name === "動画") {
             const hidden = document.createElement('input');
-            hidden.type = 'hidden'; hidden.name = name; hidden.value = row[4] || "";
+            hidden.type = 'hidden'; hidden.name = name; hidden.value = imageUrl || "";
             fieldsDiv.appendChild(hidden);
             return;
         }
 
-        const group = document.createElement('div'); group.className = 'field-group';
-        group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
-
-        if (name.includes('_課題') && imageUrl && imageUrl.startsWith('http')) {
-            const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
-            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
-            
-            const img = document.createElement('img');
-            img.src = src;
-            img.style = "width:100%; border-radius:8px; margin-top:10px; border:1px solid #ddd; display:block;";
-            group.appendChild(img);
-        }
-
+        const group = document.createElement('div');
+        group.className = 'field-group';
+        
         let input;
-        if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
-            input = document.createElement('select');
-            input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
-            input.dataset.lv = type.split('_')[1];
-            input.dataset.source = type.split('_')[0]; 
-            input.addEventListener('change', (e) => { syncICF(e.target); updateTotalCount(); });
-        } else if (type === 'select' || options.length > 0) {
-            input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
-            options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-            input.addEventListener('change', updateTotalCount);
-        } else if (type === 'textarea') {
-            input = document.createElement('textarea'); input.rows = 4;
-            input.dataset.limit = limit;
-            input.addEventListener('input', updateTotalCount);
+        if (type === 'checkbox') {
+            // チェックボックス形式
+            group.classList.add('checkbox-group');
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = `check-${name}`;
+            input.dataset.onValue = options[0] || "★"; // 選択肢1つ目がONの値
+            const label = document.createElement('label');
+            label.htmlFor = input.id;
+            label.innerText = name;
+            group.appendChild(input);
+            group.appendChild(label);
         } else {
-            input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
-            input.addEventListener('input', updateTotalCount);
+            // 通常項目
+            group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
+
+            if (name.includes('_課題') && imageUrl && imageUrl.startsWith('http')) {
+                const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
+                const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
+                const img = document.createElement('img');
+                img.src = src;
+                img.style = "width:100%; border-radius:8px; margin-top:10px; border:1px solid #ddd; display:block;";
+                group.appendChild(img);
+            }
+
+            if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
+                input = document.createElement('select');
+                input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
+                input.dataset.lv = type.split('_')[1];
+                input.dataset.source = type.split('_')[0]; 
+                input.addEventListener('change', (e) => { syncICF(e.target); updateTotalCount(); });
+            } else if (type === 'select' || options.length > 0) {
+                input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
+                options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+                input.addEventListener('change', updateTotalCount);
+            } else if (type === 'textarea' || type === 'testarea') {
+                input = document.createElement('textarea'); input.rows = 4;
+                input.dataset.limit = limit;
+                input.addEventListener('input', updateTotalCount);
+            } else {
+                input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
+                input.addEventListener('input', updateTotalCount);
+            }
         }
         input.name = name;
         group.appendChild(input);
@@ -179,7 +250,7 @@ function render(config) {
             const guide = document.createElement('div'); guide.className = 'count-guide count-blue'; guide.id = `guide-${name}`;
             group.appendChild(guide);
         }
-        if (type === 'textarea' && limit) {
+        if ((type === 'textarea' || type === 'testarea') && limit) {
             const counter = document.createElement('div'); counter.id = `counter-${name}`; counter.className = 'count-guide';
             group.appendChild(counter);
         }
@@ -188,109 +259,54 @@ function render(config) {
     initICF();
 }
 
+// Face情報タブの描画（既存ロジックを流用）
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
-    
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
 
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
-        const pdfUrl = data["PDFリンク"];
-        const embedUrl = pdfUrl.replace(/\/view\?usp=sharing|\/view/g, '/preview');
-
-        const pdfLabel = document.createElement('label');
-        pdfLabel.innerText = "過去のレポートPDF（上下にスクロールできます）";
+        const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
+        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
         faceArea.appendChild(pdfLabel);
-
         const pdfContainer = document.createElement('div');
         pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px; -webkit-overflow-scrolling:touch;";
-        
-        const iframe = document.createElement('iframe');
-        iframe.src = embedUrl;
-        iframe.style = "width:100%; height:100%; border:none;";
-        
-        pdfContainer.appendChild(iframe);
-        faceArea.appendChild(pdfContainer);
+        const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
+        pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
     }
 
-    const media = document.createElement('div');
-    const faceUrl = data["face情報"] || data["顔写真"] || "";
-    const movieUrl = data["動画"] || "";
+    Object.keys(data).forEach(key => {
+        const url = data[key];
+        if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
 
-    if (faceUrl && faceUrl.startsWith("http")) {
-        const imgIdMatch = faceUrl.match(/[-\w]{25,}/);
-        const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : faceUrl;
+        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
         
-        const imgLabel = document.createElement('label');
-        imgLabel.innerText = "Face画像";
-        media.appendChild(imgLabel);
-        
-        const img = document.createElement('img');
-        img.src = src;
-        img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
-        media.appendChild(img);
-    }
-
-    if (movieUrl) {
-        let vId = "";
-        if (movieUrl.includes("youtu.be/")) vId = movieUrl.split("youtu.be/")[1].split(/[?#]/)[0];
-        else if (movieUrl.includes("v=")) vId = movieUrl.split("v=")[1].split("&")[0];
-        else if (movieUrl.includes("embed/")) vId = movieUrl.split("embed/")[1].split(/[?#]/)[0];
-
-        if (vId) {
-            const vidLabel = document.createElement('label');
-            vidLabel.innerText = "動作動画（YouTube）";
-            media.appendChild(vidLabel);
-            const iframe = document.createElement('iframe');
-            iframe.width = "100%"; iframe.height = "250";
-            iframe.src = `https://www.youtube.com/embed/${vId}`;
-            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
-            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
-            media.appendChild(iframe);
-        }
-    }
-
-    if (media.childNodes.length === 0 && !data["PDFリンク"]) {
-        media.innerHTML = '<div class="no-data-msg">表示できる情報がありません</div>';
-    }
-    faceArea.appendChild(media);
-}
-
-function updateTotalCount() {
-    const targetParts = ["体幹", "肩", "肘手首", "ひざ", "股関節足首"];
-    const allTenki = Array.from(document.querySelectorAll('select[name*="_計画書へ転記"]'));
-    const optionalTenki = allTenki.filter(s => targetParts.some(p => s.name.startsWith(p)));
-    const selectedCount = optionalTenki.filter(s => s.value === "転記する").length;
-
-    optionalTenki.forEach(sel => {
-        const guide = document.getElementById(`guide-${sel.name}`);
-        if (guide) {
-            guide.innerText = `${selectedCount} / 3 部位選択済み`;
-            if (selectedCount >= 3 && sel.value !== "転記する") {
-                sel.disabled = true; sel.style.backgroundColor = "#f0f0f0";
-                guide.className = 'count-guide count-red';
-            } else {
-                sel.disabled = false; sel.style.backgroundColor = "";
-                guide.className = 'count-guide count-blue';
+        if (url.includes("youtu")) {
+            let vId = "";
+            if (url.includes("youtu.be/")) vId = url.split("youtu.be/")[1].split(/[?#]/)[0];
+            else if (url.includes("v=")) vId = url.split("v=")[1].split("&")[0];
+            if (vId) {
+                const iframe = document.createElement('iframe');
+                iframe.width = "100%"; iframe.height = "250"; iframe.src = `https://www.youtube.com/embed/${vId}`;
+                iframe.frameBorder = "0"; iframe.allowFullscreen = true;
+                iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
+                faceArea.appendChild(iframe);
             }
+        } else {
+            const imgIdMatch = url.match(/[-\w]{25,}/);
+            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
+            const img = document.createElement('img');
+            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
+            faceArea.appendChild(img);
         }
     });
 
-    document.querySelectorAll('textarea[name]').forEach(area => {
-        const limit = area.dataset.limit;
-        if (limit) {
-            const current = area.value.length;
-            const counter = document.getElementById(`counter-${area.name}`);
-            if (counter) {
-                counter.innerText = `${current} / ${limit} 文字`;
-                counter.style.color = (current > limit) ? "red" : "#666";
-                area.style.borderColor = (current > limit) ? "red" : "";
-            }
-        }
-    });
+    if (faceArea.childNodes.length === 1) {
+        faceArea.innerHTML += '<div class="no-data-msg">表示できる情報がありません</div>';
+    }
 }
 
-async function searchData() {
+function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
@@ -298,18 +314,20 @@ async function searchData() {
     alertEl.style.display = 'none'; 
     document.getElementById('loading').style.display = 'block';
 
-    callGAS({ action: 'find', email: email }, async (res) => {
+    // 検索時もフォームIDをセットで送る
+    callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
         document.getElementById('loading').style.display = 'none';
-        if (!res || !res.data) return alert("データがありません");
+        if (!res || !res.data) return alert("このフォームでの履歴はありません");
         
         const data = res.data;
-        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
-            alertEl.style.display = 'block';
-        }
+        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
         updateFaceTab(data);
 
         document.querySelectorAll('#mainForm [name]').forEach(el => {
-            if (data[el.name] !== undefined && !el.dataset.lv) el.value = data[el.name];
+            if (data[el.name] !== undefined && !el.dataset.lv) {
+                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
+                else el.value = data[el.name];
+            }
         });
 
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
@@ -327,7 +345,7 @@ async function searchData() {
             }
         }
         updateTotalCount();
-        alert("過去データを同期しました。Faceタブで内容を確認してください。");
+        alert("履歴データを読み込みました。");
     });
 }
 
@@ -336,8 +354,12 @@ function sendData() {
     document.getElementById('overlay').style.display = 'flex';
     const btn = document.querySelector('.btn-send');
     btn.disabled = true; btn.innerText = "送信中...";
-    const payload = {};
-    document.querySelectorAll('#mainForm [name]').forEach(el => payload[el.name] = el.value);
+
+    const payload = { "form_id": activeFormId };
+    document.querySelectorAll('#mainForm [name]').forEach(el => {
+        if (el.type === 'checkbox') payload[el.name] = el.checked ? (el.dataset.onValue || "★") : "";
+        else payload[el.name] = el.value;
+    });
 
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text())
@@ -349,7 +371,7 @@ function sendData() {
             document.getElementById('search-alert').style.display = 'none'; 
             window.scrollTo(0,0);
         } else {
-            alert("送信結果: " + res);
+            alert("エラー: " + res);
         }
         btn.disabled = false; btn.innerText = "報告を送信・PDF更新";
     }).catch(e => { 
@@ -359,11 +381,37 @@ function sendData() {
     });
 }
 
-function switchTab(id, btn) {
-    document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + id).style.display = 'block';
-    btn.classList.add('active');
+// ------------------------------------------------------------
+// 以降、変更なしの共通ロジック（ICF/カウントなど）
+// ------------------------------------------------------------
+function updateTotalCount() {
+    const targetParts = ["体幹", "肩", "肘手首", "ひざ", "股関節足首"];
+    const allTenki = Array.from(document.querySelectorAll('select[name*="_計画書へ転記"]'));
+    const optionalTenki = allTenki.filter(s => targetParts.some(p => s.name.startsWith(p)));
+    const selectedCount = optionalTenki.filter(s => s.value === "転記する").length;
+    optionalTenki.forEach(sel => {
+        const guide = document.getElementById(`guide-${sel.name}`);
+        if (guide) {
+            guide.innerText = `${selectedCount} / 3 部位選択済み`;
+            if (selectedCount >= 3 && sel.value !== "転記する") {
+                sel.disabled = true; sel.style.backgroundColor = "#f0f0f0"; guide.className = 'count-guide count-red';
+            } else {
+                sel.disabled = false; sel.style.backgroundColor = ""; guide.className = 'count-guide count-blue';
+            }
+        }
+    });
+    document.querySelectorAll('textarea[name]').forEach(area => {
+        const limit = area.dataset.limit;
+        if (limit) {
+            const current = area.value.length;
+            const counter = document.getElementById(`counter-${area.name}`);
+            if (counter) {
+                counter.innerText = `${current} / ${limit} 文字`;
+                counter.style.color = (current > limit) ? "red" : "#666";
+                area.style.borderColor = (current > limit) ? "red" : "";
+            }
+        }
+    });
 }
 
 function syncICF(target) {
@@ -371,7 +419,6 @@ function syncICF(target) {
     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
     const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
     const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-
     if (lv === 'major' && middle) {
         middle.innerHTML = '<option value="">-- 選択 --</option>';
         const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
@@ -399,6 +446,13 @@ function pollForValue(el, val) {
             else if (c++ > 20) { clearInterval(i); res(); }
         }, 100);
     });
+}
+
+function switchTab(id, btn) {
+    document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).style.display = 'block';
+    btn.classList.add('active');
 }
 </script>
 </body>
