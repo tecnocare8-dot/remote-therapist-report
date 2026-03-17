@@ -28,6 +28,11 @@
         .flash-active { background-color: #fff9c4 !important; }
 
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        .search-flex { display: flex; gap: 8px; margin-top: 8px; }
+        .search-flex input { margin-top: 0; flex: 1; }
+        .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: none; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; }
         .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
@@ -38,6 +43,7 @@
         .modal-btn { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 6px; margin-top: 20px; cursor: pointer; font-weight: bold; width: 100%; }
         .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
         
+        #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
         .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
     </style>
 </head>
@@ -59,6 +65,14 @@
         </div>
         
         <div style="padding:20px;">
+            <div class="search-area">
+                <label>患者データ検索（メールアドレス）</label>
+                <div class="search-flex">
+                    <input type="email" id="search-email" placeholder="example@gmail.com">
+                    <button type="button" class="btn-search" onclick="searchData()">検索</button>
+                </div>
+                <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
+            </div>
             <div id="loading">設定をロード中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
@@ -74,7 +88,7 @@
 /**
  * ★ 設定
  */
-const activeFormId = "a"; 
+let activeFormId = "a"; // URLから取得するため let に変更
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwVq4vMvZOYAmFanju-SyJPN6W3KjtJ9yIlrwhjsBbk6ZOD6_uewwp3x2w6-kPZO6c8/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
@@ -92,7 +106,15 @@ function callGAS(params, callback) {
     document.body.appendChild(script);
 }
 
+// URLから id=a などのパラメータを取得する関数
+function getFormIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('id') || 'a').toLowerCase();
+}
+
 window.onload = () => {
+    activeFormId = getFormIdFromUrl();
+
     callGAS({ action: 'init', id: activeFormId }, (data) => {
         icf_data.participation = data.participation_lists || [];
         icf_data.activity = data.activity_lists || [];
@@ -102,32 +124,31 @@ window.onload = () => {
         const configRows = data.config || [];
         const headers = configRows[0];
         
-        // 1. 自分のフォーム用の「順番列」を特定 (Form_a 等)
+        // 1. 自分のフォーム用の「順番列」を特定 (Form_a, Form_b等)
         const orderColIdx = headers.findIndex(h => String(h).toLowerCase().trim() === "form_" + activeFormId);
         
         if (orderColIdx === -1) {
-            document.getElementById('loading').innerText = "エラー: Configに 'Form_" + activeFormId + "' 列がありません。";
+            document.getElementById('loading').innerText = "エラー: Configに 'Form_" + activeFormId + "' 列が見つかりません。";
             return;
         }
 
-        // 2. タイトルの設定 (A列が form_title_a 等の行を探す)
+        // 2. タイトルの設定 (A列が form_title_a 等の行を探し、F列(設定ID)を読み取る)
         const titleKey = "form_title_" + activeFormId;
         const titleRow = configRows.find(row => String(row[0]).toLowerCase().trim() === titleKey);
-        if (titleRow && titleRow[5]) { // 設定値はF列(Index 5)
+        if (titleRow && titleRow[5]) { 
             const finalTitle = String(titleRow[5]).trim();
             document.getElementById('display-title').innerText = finalTitle;
             document.title = finalTitle;
         }
 
         // 3. 表示項目のフィルタリングと並び替え
-        // ルール：順番列（Form_a列）に数字が入っているものだけを抽出し、その数字順に並べる
         let displayConfig = [];
         for (let i = 1; i < configRows.length; i++) {
             const row = configRows[i];
             const orderVal = row[orderColIdx];
             const orderNum = Number(orderVal);
 
-            // 数字が入っていない（空欄または文字）項目は、このフォームでは「非表示」
+            // 順番列に数値が入っているものだけを表示
             if (orderVal !== "" && !isNaN(orderNum)) {
                 displayConfig.push({
                     data: row,
@@ -136,12 +157,12 @@ window.onload = () => {
             }
         }
 
-        // 小さい順にソート
         displayConfig.sort((a, b) => a.order - b.order);
 
-        // 描画
         render(displayConfig.map(item => item.data));
-        updateFaceTab(displayConfig.map(item => item.data));
+        
+        // Face情報タブの初期化（検索結果がない状態でも枠だけ表示）
+        updateFaceTab({});
         
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
@@ -156,7 +177,7 @@ function render(configRows) {
         const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4], options = row[2] ? String(row[2]).split(',') : [];
         if (!name || name === "項目名" || name.includes("templateid") || name.includes("form_title")) return;
 
-        // 隠しフィールド
+        // 隠しフィールド（メディア系や優先度）
         if (type === 'face' || type === 'movie' || name.includes('優先')) {
             fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
             return;
@@ -176,7 +197,14 @@ function render(configRows) {
         group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
         
         let input;
-        if (type === 'select' || options.length > 0) {
+        if (type === 'checkbox') {
+            group.classList.add('checkbox-group');
+            input = document.createElement('input');
+            input.type = 'checkbox'; input.id = `check-${name}`; input.name = name;
+            input.dataset.onValue = options[0] || "★"; 
+            const label = document.createElement('label'); label.htmlFor = input.id; label.innerText = name;
+            group.appendChild(input); group.appendChild(label);
+        } else if (type === 'select' || options.length > 0) {
             input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
             options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
             
@@ -220,12 +248,76 @@ function handleTaskAutoFill(selectEl) {
     }
 }
 
-function updateFaceTab(configRows) {
-    const area = document.getElementById('face-img-area');
-    area.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
-    configRows.filter(r => String(r[1]).trim().toLowerCase() === 'face' || String(r[1]).trim().toLowerCase() === 'movie').forEach(r => {
-        const lbl = document.createElement('div'); lbl.className = 'media-label'; lbl.innerText = r[0]; area.appendChild(lbl);
-        // (簡易表示: 実際は画像や動画を表示)
+/**
+ * Face情報タブ：メディア表示ロジック（田中様のオリジナルを完全復元）
+ */
+function updateFaceTab(data) {
+    const faceArea = document.getElementById('face-img-area');
+    if (!faceArea) return;
+    faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
+
+    // 1. 過去のレポートPDFプレビュー
+    if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
+        const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
+        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
+        faceArea.appendChild(pdfLabel);
+        const pdfContainer = document.createElement('div');
+        pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px; -webkit-overflow-scrolling:touch;";
+        const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
+        pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
+    }
+
+    // 2. その他のメディア項目（画像、動画）
+    Object.keys(data).forEach(key => {
+        const url = data[key];
+        if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
+        
+        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
+        
+        if (url.includes("youtu")) {
+            // YouTube埋め込み
+            let vId = url.includes("youtu.be/") ? url.split("youtu.be/")[1].split(/[?#]/)[0] : url.split("v=")[1].split("&")[0];
+            const iframe = document.createElement('iframe');
+            iframe.width = "100%"; iframe.height = "250"; iframe.src = `https://www.youtube.com/embed/${vId}`;
+            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
+            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
+            faceArea.appendChild(iframe);
+        } else {
+            // Googleドライブ画像サムネイル
+            const imgIdMatch = url.match(/[-\w]{25,}/);
+            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
+            const img = document.createElement('img');
+            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
+            faceArea.appendChild(img);
+        }
+    });
+}
+
+function searchData() {
+    const email = document.getElementById('search-email').value;
+    const alertEl = document.getElementById('search-alert');
+    if (!email) return alert("メールアドレスを入力してください");
+    alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
+    
+    callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!res || !res.data) return alert("履歴はありません");
+        const data = res.data;
+        
+        // PDFリンクがある場合のアラート
+        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
+        
+        // メディアタブの更新
+        updateFaceTab(data);
+        
+        // 入力項目の同期
+        document.querySelectorAll('#mainForm [name]').forEach(el => {
+            if (data[el.name] !== undefined) {
+                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
+                else el.value = data[el.name];
+            }
+        });
+        alert("履歴を同期しました。");
     });
 }
 
@@ -233,11 +325,18 @@ function sendData() {
     if (!confirm("送信しますか？")) return;
     document.getElementById('overlay').style.display = 'flex';
     const payload = { "formid": activeFormId }; 
-    document.querySelectorAll('#mainForm [name]').forEach(el => payload[el.name] = el.value);
+    document.querySelectorAll('#mainForm [name]').forEach(el => {
+        if (el.type === 'checkbox') payload[el.name] = el.checked ? (el.dataset.onValue || "★") : "";
+        else payload[el.name] = el.value;
+    });
+    
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text()).then(res => {
         document.getElementById('overlay').style.display = 'none';
         showMsg(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
+    }).catch(e => {
+        document.getElementById('overlay').style.display = 'none';
+        showMsg("通信エラーが発生しました。");
     });
 }
 
