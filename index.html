@@ -1,3 +1,12 @@
+<!-- 
+  Remote Therapist® Frontend System
+  【最新バージョン：Ver 2026.03.18.02】
+  更新内容：
+  1. 接続診断機能：15秒応答がない場合にエラー内容を画面に赤字で表示します。
+  2. 上限文字数の赤字表示：D列の数値を参照し、入力欄の下に「（上限：○○文字）」を赤字で表示。
+  3. テキストエリア高さ連動：上限文字数に応じて入力欄の高さ（rows）を動的に変更。
+  4. 推奨目的の自動入力：課題選択時にF列の文字を流し込み、黄色くフラッシュ。
+-->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -24,16 +33,13 @@
             background-color: #fff; -webkit-appearance: none; transition: background-color 0.4s ease;
         }
 
-        /* 自動入力時のフラッシュ演出 */
         .flash-active { background-color: #fff9c4 !important; }
-
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
-        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        .search-flex { display: flex; gap: 8px; margin-top: 8px; }
-        .search-flex input { margin-top: 0; flex: 1; }
-        .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
-
+        
+        /* 診断・エラー表示 */
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
+        #error-msg { display: none; background: #fce8e6; color: #d93025; padding: 15px; border-radius: 8px; margin: 20px; border: 1px solid #d93025; font-size: 14px; white-space: pre-wrap; }
+
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: none; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; }
         .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -41,15 +47,8 @@
         .modal-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 3000; display: none; align-items: center; justify-content: center; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 400px; text-align: center; }
         .modal-btn { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 6px; margin-top: 20px; cursor: pointer; font-weight: bold; width: 100%; }
-        .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
         
-        #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
-        .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
-        
-        /* 上限文字数の赤字ラベル */
         .limit-label { color: #d93025; font-size: 12px; font-weight: bold; margin-top: 5px; display: block; }
-
-        /* チェックボックス：標準のチェックが出るように指定 */
         .checkbox-group { display: flex; align-items: center; gap: 15px; cursor: pointer; padding: 12px 0; }
         .checkbox-group input[type="checkbox"] { 
             width: 32px; height: 32px; cursor: pointer; margin: 0; 
@@ -58,6 +57,7 @@
             appearance: checkbox !important;
         }
         .checkbox-group label { margin: 0; cursor: pointer; flex: 1; font-weight: bold; font-size: 18px; }
+        .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
     </style>
 </head>
 <body>
@@ -77,16 +77,10 @@
             <h1 id="display-title">レポートシステム</h1>
         </div>
         
+        <div id="error-msg"></div>
+
         <div style="padding:20px;">
-            <div class="search-area">
-                <label>患者データ検索（メールアドレス）</label>
-                <div class="search-flex">
-                    <input type="email" id="search-email" placeholder="example@gmail.com">
-                    <button type="button" class="btn-search" onclick="searchData()">検索</button>
-                </div>
-                <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
-            </div>
-            <div id="loading">設定をロード中...</div>
+            <div id="loading">📡 設定をロード中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
                 <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF生成</button>
@@ -102,27 +96,49 @@
  * ★ 設定
  */
 let activeFormId = "a"; 
+// 田中様の最新デプロイURL
 const GAS_URL = "https://script.google.com/macros/s/AKfycbz2t00zELc6xv-XUxKVuqVPcBKRCkJqsNVDQmkheIJHLGV0cVZbDNEEB6u197t4VNr_/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
 let masterExerciseList = []; 
+let loadTimer;
 
-function showMsg(text) { document.getElementById('modal-text').innerText = text; document.getElementById('modal-bg').style.display = 'flex'; }
-function closeModal() { document.getElementById('modal-bg').style.display = 'none'; }
+function showDiagError(msg) {
+    clearTimeout(loadTimer);
+    document.getElementById('loading').style.display = 'none';
+    const err = document.getElementById('error-msg');
+    err.innerText = "❌ エラー発生:\n" + msg + "\n\n【確認事項】\n1. GASの公開設定が「全員(Anonymous)」ですか？\n2. URL末尾が /exec ですか？\n3. シート名(config等)を変更していませんか？";
+    err.style.display = 'block';
+}
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
-    window[id] = (data) => { callback(data); document.body.removeChild(document.getElementById(id)); delete window[id]; };
-    const script = document.createElement('script'); script.id = id;
+    
+    // 15秒のタイムアウト設定
+    loadTimer = setTimeout(() => {
+        showDiagError("GASからの応答がありません。ネットワークまたはGASのデプロイ設定を確認してください。");
+    }, 15000);
+
+    window[id] = (data) => { 
+        clearTimeout(loadTimer);
+        if (data.error) return showDiagError("GAS内部エラー: " + data.error);
+        callback(data); 
+        const scriptTag = document.getElementById(id);
+        if (scriptTag) document.body.removeChild(scriptTag);
+        delete window[id]; 
+    };
+
+    const script = document.createElement('script'); 
+    script.id = id;
     const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
     script.src = `${GAS_URL}?${query}&callback=${id}`;
+    script.onerror = () => showDiagError("スクリプトの読み込みに失敗しました。URLが正しいか確認してください。");
     document.body.appendChild(script);
 }
 
 function getFormIdFromUrl() {
     const params = new URLSearchParams(window.location.search);
-    let id = params.get('id') || params.get('f') || 'a';
-    return id.toLowerCase().trim();
+    return (params.get('id') || params.get('f') || 'a').toLowerCase().trim();
 }
 
 window.onload = () => {
@@ -135,43 +151,28 @@ window.onload = () => {
         masterExerciseList = data.exercise_lists || []; 
         
         const configRows = data.config || [];
+        if (configRows.length === 0) return showDiagError("Configデータが空です。シート名を確認してください。");
+
         const headers = configRows[0];
-        
-        // 1. 順番列の特定 (柔軟なマッチング)
         const orderColIdx = headers.findIndex(h => {
-            const hStr = String(h).toLowerCase().trim();
-            return hStr === "form_" + activeFormId || hStr === "form" + activeFormId;
+            const s = String(h).toLowerCase().trim();
+            return s === "form_" + activeFormId || s === "form" + activeFormId;
         });
         
-        if (orderColIdx === -1) {
-            document.getElementById('loading').innerText = "エラー: Configに 'Form_" + activeFormId + "' 列が見つかりません。";
-            return;
-        }
+        if (orderColIdx === -1) return showDiagError("Configの1行目に 'Form_" + activeFormId + "' 列が見つかりません。");
 
-        // 2. タイトルの特定
-        const titleKey = "form_title_" + activeFormId;
-        const titleRow = configRows.find(row => {
-            const rowKey = String(row[0] || "").toLowerCase().trim();
-            return rowKey === titleKey || rowKey === "orm_title_" + activeFormId;
-        });
+        const titleRow = configRows.find(row => String(row[0]||"").toLowerCase().trim() === "form_title_" + activeFormId);
         if (titleRow && titleRow[5]) { 
-            const finalTitle = String(titleRow[5]).trim();
-            document.getElementById('display-title').innerText = finalTitle;
-            document.title = finalTitle;
+            document.getElementById('display-title').innerText = titleRow[5];
+            document.title = titleRow[5];
         }
 
-        // 3. 表示項目のフィルタリング
         let displayConfig = [];
         for (let i = 1; i < configRows.length; i++) {
             const row = configRows[i];
             const orderVal = row[orderColIdx];
-            const orderNum = Number(orderVal);
-
-            if (orderVal !== "" && !isNaN(orderNum)) {
-                displayConfig.push({
-                    data: row,
-                    order: orderNum
-                });
+            if (orderVal !== "" && !isNaN(Number(orderVal))) {
+                displayConfig.push({ data: row, order: Number(orderVal) });
             }
         }
 
@@ -197,25 +198,19 @@ function render(configRows) {
         }
 
         const group = document.createElement('div'); group.className = 'field-group';
-        
         if (url && url.startsWith('http')) {
             const imgIdMatch = url.match(/[-\w]{25,}/);
             const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
-            const img = document.createElement('img');
-            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:10px; border:1px solid #ddd; display:block;";
-            group.appendChild(img);
+            group.appendChild(Object.assign(document.createElement('img'), { src: src, style: "width:100%; border-radius:8px; margin-bottom:10px; border:1px solid #ddd; display:block;" }));
         }
 
         let input;
         if (type === 'checkbox') {
             group.classList.add('checkbox-group');
-            const labelText = name.includes('おすすめ') ? "オススメする" : name;
-            input = document.createElement('input');
-            input.type = 'checkbox'; input.id = `check-${name}`; input.name = name;
+            input = document.createElement('input'); input.type = 'checkbox'; input.name = name; input.id = name;
             input.dataset.onValue = options[0] || "★"; 
-            const label = document.createElement('label'); 
-            label.htmlFor = input.id; label.innerText = labelText;
-            group.appendChild(input); group.appendChild(label);
+            const lbl = document.createElement('label'); lbl.htmlFor = name; lbl.innerText = name.includes('おすすめ') ? "オススメする" : name;
+            group.appendChild(input); group.appendChild(lbl);
         } else {
             group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
@@ -224,13 +219,12 @@ function render(configRows) {
                 options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
                 if (name.endsWith("_課題")) {
                     input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
-                    const hint = document.createElement('span');
-                    hint.className = 'auto-fill-hint';
-                    hint.innerText = "※選択すると「推奨目的」が自動入力されます";
+                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
                     group.appendChild(hint);
                 }
             } else if (type === 'textarea') {
                 input = document.createElement('textarea'); 
+                // 【復旧】上限文字数に応じた高さ調整
                 if (limit >= 300) input.rows = 10;
                 else if (limit >= 150) input.rows = 7;
                 else if (limit >= 80) input.rows = 5;
@@ -242,12 +236,10 @@ function render(configRows) {
             input.name = name;
             group.appendChild(input);
 
-            // ★ 上限文字数が設定されている場合、赤字でラベルを表示
+            // 【復旧】上限文字数の赤字表示
             if (limit > 0) {
-                const limitLabel = document.createElement('span');
-                limitLabel.className = 'limit-label';
-                limitLabel.innerText = `（上限：${limit}文字）`;
-                group.appendChild(limitLabel);
+                const ll = document.createElement('span'); ll.className = 'limit-label'; ll.innerText = `（上限：${limit}文字）`;
+                group.appendChild(ll);
             }
         }
         fieldsDiv.appendChild(group);
@@ -257,78 +249,14 @@ function render(configRows) {
 function handleTaskAutoFill(selectEl) {
     const taskName = selectEl.value;
     const prefix = selectEl.name.split('_')[0]; 
-    const targetName = prefix + "_運動の目的";
-    const targetInput = document.querySelector(`[name="${targetName}"]`);
+    const targetInput = document.querySelector(`[name="${prefix}_運動の目的"]`);
     if (!taskName || !targetInput) return;
-
-    const foundRow = masterExerciseList.slice(1).find(row => {
-        const rowCat = String(row[0]).trim();
-        const rowTask = String(row[1]).trim();
-        return (rowCat.includes(prefix) || prefix.includes(rowCat)) && rowTask === taskName;
-    });
-
+    const foundRow = masterExerciseList.slice(1).find(row => String(row[0]).trim().includes(prefix) && String(row[1]).trim() === taskName);
     if (foundRow && foundRow[5]) {
         targetInput.value = foundRow[5];
         targetInput.classList.add('flash-active');
         setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
     }
-}
-
-function updateFaceTab(data) {
-    const faceArea = document.getElementById('face-img-area');
-    if (!faceArea) return;
-    faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
-
-    if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
-        const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
-        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
-        faceArea.appendChild(pdfLabel);
-        const pdfContainer = document.createElement('div');
-        pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px; -webkit-overflow-scrolling:touch;";
-        const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
-        pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
-    }
-
-    Object.keys(data).forEach(key => {
-        const url = data[key];
-        if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
-        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
-        if (url.includes("youtu")) {
-            let vId = url.includes("youtu.be/") ? url.split("youtu.be/")[1].split(/[?#]/)[0] : url.split("v=")[1].split("&")[0];
-            const iframe = document.createElement('iframe');
-            iframe.width = "100%"; iframe.height = "250"; iframe.src = `https://www.youtube.com/embed/${vId}`;
-            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
-            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
-            faceArea.appendChild(iframe);
-        } else {
-            const imgIdMatch = url.match(/[-\w]{25,}/);
-            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
-            const img = document.createElement('img');
-            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
-            faceArea.appendChild(img);
-        }
-    });
-}
-
-function searchData() {
-    const email = document.getElementById('search-email').value;
-    const alertEl = document.getElementById('search-alert');
-    if (!email) return alert("メールアドレスを入力してください");
-    alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
-    callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
-        document.getElementById('loading').style.display = 'none';
-        if (!res || !res.data) return alert("履歴はありません");
-        const data = res.data;
-        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
-        updateFaceTab(data);
-        document.querySelectorAll('#mainForm [name]').forEach(el => {
-            if (data[el.name] !== undefined) {
-                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
-                else el.value = data[el.name];
-            }
-        });
-        alert("履歴を同期しました。");
-    });
 }
 
 function sendData() {
@@ -342,4 +270,21 @@ function sendData() {
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text()).then(res => {
         document.getElementById('overlay').style.display = 'none';
-        showMsg(res.includes("SUCCESS") ? "送信完了しました。" : "エラー:
+        showMsg(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
+    }).catch(e => {
+        document.getElementById('overlay').style.display = 'none';
+        showMsg("通信エラーが発生しました。");
+    });
+}
+
+function showMsg(text) { document.getElementById('modal-text').innerText = text; document.getElementById('modal-bg').style.display = 'flex'; }
+function closeModal() { document.getElementById('modal-bg').style.display = 'none'; }
+function switchTab(id, btn) {
+    document.querySelectorAll('.tab-content').forEach(e => e.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).style.display = 'block';
+    btn.classList.add('active');
+}
+</script>
+</body>
+</html>
