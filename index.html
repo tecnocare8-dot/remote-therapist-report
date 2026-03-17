@@ -10,6 +10,11 @@
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        .page-header { background: #1a73e8; color: white; padding: 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
+        .brand-label { font-size: 11px; opacity: 0.8; letter-spacing: 0.1em; margin-bottom: 4px; display: block; font-weight: bold; }
+        .page-header h1 { margin: 0; font-size: 19px; letter-spacing: 0.02em; line-height: 1.4; }
+
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         
@@ -47,23 +52,33 @@
 </div>
 
 <div id="tab-input" class="tab-content">
-    <div class="container">
-        <div id="loading">設定をロード中...</div>
-        <form id="mainForm" style="display:none;">
-            <div id="fields"></div>
-            <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF生成</button>
-        </form>
+    <div class="container" style="padding:0; overflow:hidden;">
+        <div class="page-header">
+            <span class="brand-label">Remote Therapist®</span>
+            <h1 id="display-title">レポートシステム</h1>
+        </div>
+        
+        <div style="padding:20px;">
+            <div id="loading">設定をロード中...</div>
+            <form id="mainForm" style="display:none;">
+                <div id="fields"></div>
+                <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF生成</button>
+            </form>
+        </div>
     </div>
 </div>
 
 <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><div id="face-img-area"></div></div></div>
 
 <script>
+/**
+ * ★ 設定
+ */
 const activeFormId = "a"; 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwVq4vMvZOYAmFanju-SyJPN6W3KjtJ9yIlrwhjsBbk6ZOD6_uewwp3x2w6-kPZO6c8/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
-let masterExerciseList = []; // ★ 運動課題全体を記憶するバケツ
+let masterExerciseList = []; 
 
 function showMsg(text) { document.getElementById('modal-text').innerText = text; document.getElementById('modal-bg').style.display = 'flex'; }
 function closeModal() { document.getElementById('modal-bg').style.display = 'none'; }
@@ -82,34 +97,74 @@ window.onload = () => {
         icf_data.participation = data.participation_lists || [];
         icf_data.activity = data.activity_lists || [];
         icf_data.function = data.function_lists || [];
-        masterExerciseList = data.exercise_lists || []; // ★ シート全体を記憶
+        masterExerciseList = data.exercise_lists || []; 
         
-        const displayConfig = (data.config || []).filter(row => {
-            const fSetting = String(row[5] || "").trim().toLowerCase();
-            const targetIds = fSetting.split(',').map(s => s.trim());
-            return (fSetting === "" || targetIds.includes(activeFormId));
-        }).sort((a, b) => (Number(a[6]) || 999) - (Number(b[6]) || 999));
+        const configRows = data.config || [];
+        const headers = configRows[0];
+        
+        // 1. 自分のフォーム用の「順番列」を特定 (Form_a 等)
+        const orderColIdx = headers.findIndex(h => String(h).toLowerCase().trim() === "form_" + activeFormId);
+        
+        if (orderColIdx === -1) {
+            document.getElementById('loading').innerText = "エラー: Configに 'Form_" + activeFormId + "' 列がありません。";
+            return;
+        }
 
-        render(displayConfig);
-        updateFaceTab(displayConfig);
+        // 2. タイトルの設定 (A列が form_title_a 等の行を探す)
+        const titleKey = "form_title_" + activeFormId;
+        const titleRow = configRows.find(row => String(row[0]).toLowerCase().trim() === titleKey);
+        if (titleRow && titleRow[5]) { // 設定値はF列(Index 5)
+            const finalTitle = String(titleRow[5]).trim();
+            document.getElementById('display-title').innerText = finalTitle;
+            document.title = finalTitle;
+        }
+
+        // 3. 表示項目のフィルタリングと並び替え
+        // ルール：順番列（Form_a列）に数字が入っているものだけを抽出し、その数字順に並べる
+        let displayConfig = [];
+        for (let i = 1; i < configRows.length; i++) {
+            const row = configRows[i];
+            const orderVal = row[orderColIdx];
+            const orderNum = Number(orderVal);
+
+            // 数字が入っていない（空欄または文字）項目は、このフォームでは「非表示」
+            if (orderVal !== "" && !isNaN(orderNum)) {
+                displayConfig.push({
+                    data: row,
+                    order: orderNum
+                });
+            }
+        }
+
+        // 小さい順にソート
+        displayConfig.sort((a, b) => a.order - b.order);
+
+        // 描画
+        render(displayConfig.map(item => item.data));
+        updateFaceTab(displayConfig.map(item => item.data));
+        
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
     });
 };
 
-function render(config) {
+function render(configRows) {
     const fieldsDiv = document.getElementById('fields');
     fieldsDiv.innerHTML = '';
-    config.forEach(row => {
+    
+    configRows.forEach(row => {
         const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4], options = row[2] ? String(row[2]).split(',') : [];
-        if (!name || name === "項目名") return;
+        if (!name || name === "項目名" || name.includes("templateid") || name.includes("form_title")) return;
+
+        // 隠しフィールド
         if (type === 'face' || type === 'movie' || name.includes('優先')) {
             fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
             return;
         }
+
         const group = document.createElement('div'); group.className = 'field-group';
         
-        // ガイド画像の表示ロジック
+        // ガイド画像
         if (url && url.startsWith('http')) {
             const imgIdMatch = url.match(/[-\w]{25,}/);
             const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
@@ -125,12 +180,12 @@ function render(config) {
             input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
             options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
             
-            // ★ 課題選択時の自動連動
+            // 運動課題の自動連動
             if (name.endsWith("_課題")) {
                 input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
                 const hint = document.createElement('span');
                 hint.className = 'auto-fill-hint';
-                hint.innerText = "※選択すると「運動の目的」が自動入力されます";
+                hint.innerText = "※選択すると「推奨目的」が自動入力されます";
                 group.appendChild(hint);
             }
         } else if (type === 'textarea') {
@@ -145,19 +200,13 @@ function render(config) {
     });
 }
 
-/**
- * ★ 推奨目的の自動流し込み
- */
 function handleTaskAutoFill(selectEl) {
     const taskName = selectEl.value;
-    const prefix = selectEl.name.split('_')[0]; // 例: "体幹"
+    const prefix = selectEl.name.split('_')[0]; 
     const targetName = prefix + "_運動の目的";
     const targetInput = document.querySelector(`[name="${targetName}"]`);
-
     if (!taskName || !targetInput) return;
 
-    // 記憶した masterExerciseList から検索
-    // A:カテゴリー, B:課題, F:推奨目的
     const foundRow = masterExerciseList.slice(1).find(row => {
         const rowCat = String(row[0]).trim();
         const rowTask = String(row[1]).trim();
@@ -166,18 +215,17 @@ function handleTaskAutoFill(selectEl) {
 
     if (foundRow && foundRow[5]) {
         targetInput.value = foundRow[5];
-        // 視覚的なフィードバック
         targetInput.classList.add('flash-active');
         setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
     }
 }
 
-function updateFaceTab(config) {
+function updateFaceTab(configRows) {
     const area = document.getElementById('face-img-area');
-    area.innerHTML = "<h3>Face情報</h3>";
-    config.filter(r => String(r[1]).trim().toLowerCase() === 'face' || String(r[1]).trim().toLowerCase() === 'movie').forEach(r => {
+    area.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
+    configRows.filter(r => String(r[1]).trim().toLowerCase() === 'face' || String(r[1]).trim().toLowerCase() === 'movie').forEach(r => {
         const lbl = document.createElement('div'); lbl.className = 'media-label'; lbl.innerText = r[0]; area.appendChild(lbl);
-        // (省略：画像・動画表示)
+        // (簡易表示: 実際は画像や動画を表示)
     });
 }
 
