@@ -1,12 +1,3 @@
-<!-- 
-  Remote Therapist® Frontend System
-  【最新バージョン：Ver 2026.03.14.01】
-  更新内容：
-  1. 送信キーの統一：送信データを "formid" に統一しバックエンドと完全同期。
-  2. メディアリンク送信：face/movie項目のURLを隠しinputとして生成し、保存を確実に。
-  3. チェックボックス視覚修正：ブラウザ標準のチェックマークが出るCSS設定を確定。
-  4. ガイド画像表示：タイプを問わず、configのE列にURLがあれば画像を表示するルールを一般化。
--->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -19,47 +10,36 @@
         .tab-btn { flex: 1; padding: 15px; border: none; background: none; font-weight: bold; cursor: pointer; color: #888; font-size: 16px; }
         .tab-btn.active { border-bottom: 3px solid #1a73e8; color: #1a73e8; }
         .container { max-width: 600px; margin: 15px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        .page-header { background: #1a73e8; color: white; padding: 15px; text-align: center; border-radius: 12px 12px 0 0; margin-bottom: -10px; }
-        .brand-label { font-size: 11px; opacity: 0.8; letter-spacing: 0.1em; margin-bottom: 4px; display: block; font-weight: bold; }
-        .page-header h1 { margin: 0; font-size: 19px; letter-spacing: 0.02em; line-height: 1.4; }
-
         .field-group { margin-bottom: 35px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         label { font-weight: bold; display: block; font-size: 16px; margin-top: 10px; color: #333; }
         
         input:not([type="checkbox"]), textarea, select { 
             width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ccc; 
             border-radius: 8px; font-size: 16px; box-sizing: border-box; 
-            background-color: #fff; -webkit-appearance: none; 
+            background-color: #fff; -webkit-appearance: none; transition: background-color 0.4s ease;
         }
-        
-        /* チェックボックス：標準のチェックが出るように指定 */
-        .checkbox-group { display: flex; align-items: center; gap: 15px; cursor: pointer; padding: 12px 0; }
-        .checkbox-group input[type="checkbox"] { 
-            width: 32px; height: 32px; cursor: pointer; margin: 0; 
-            flex-shrink: 0; 
-            -webkit-appearance: checkbox !important;
-            appearance: checkbox !important;
-        }
-        .checkbox-group label { margin: 0; cursor: pointer; flex: 1; font-weight: bold; font-size: 18px; }
+
+        /* 自動入力時のフラッシュ演出 */
+        .flash-active { background-color: #fff9c4 !important; }
 
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
-        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
-        .search-flex { display: flex; gap: 8px; margin-top: 8px; }
-        .search-flex input { margin-top: 0; flex: 1; }
-        .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
-
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: none; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; }
         .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .modal-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 3000; display: none; align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 85%; max-width: 400px; text-align: center; }
+        .modal-btn { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 6px; margin-top: 20px; cursor: pointer; font-weight: bold; width: 100%; }
         .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
-        #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
+        
+        .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
     </style>
 </head>
 <body>
 
 <div id="overlay"><div class="spinner"></div><div>データを送信・PDFを生成中...</div></div>
+<div id="modal-bg" class="modal-bg"><div class="modal-content"><p id="modal-text"></p><button class="modal-btn" onclick="closeModal()">OK</button></div></div>
 
 <div class="tab-menu">
     <button class="tab-btn active" onclick="switchTab('input', this)">報告入力</button>
@@ -67,310 +47,149 @@
 </div>
 
 <div id="tab-input" class="tab-content">
-    <div class="container" style="padding:0; overflow:hidden;">
-        <div class="page-header">
-            <span class="brand-label">Remote Therapist®</span>
-            <h1 id="display-title">レポートシステム</h1>
-        </div>
-        
-        <div style="padding:20px;">
-            <div class="search-area">
-                <label>患者データ検索（メールアドレス）</label>
-                <div class="search-flex">
-                    <input type="email" id="search-email" placeholder="example@gmail.com">
-                    <button type="button" class="btn-search" onclick="searchData()">検索</button>
-                </div>
-                <div id="search-alert">作成されたレポートがあります。face情報を確認ください</div>
-            </div>
-            <div id="loading">接続中...</div>
-            <form id="mainForm" style="display:none;">
-                <div id="fields"></div>
-                <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF生成</button>
-            </form>
-        </div>
+    <div class="container">
+        <div id="loading">設定をロード中...</div>
+        <form id="mainForm" style="display:none;">
+            <div id="fields"></div>
+            <button type="button" class="btn-send" onclick="sendData()">報告を送信・PDF生成</button>
+        </form>
     </div>
 </div>
 
 <div id="tab-face" class="tab-content" style="display:none;"><div class="container"><div id="face-img-area"></div></div></div>
 
 <script>
-/**
- * ★ 設定
- */
-let activeFormId = "a"; 
-const MEDIA_THRESHOLD = 9; 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxknqnpiK8iDHA7B1XKhsz1usx8EZolxbMYUZ3coMYiOcuIE3FNsZ-GkX3tyq1F04ue/exec"; 
+const activeFormId = "a"; 
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwVq4vMvZOYAmFanju-SyJPN6W3KjtJ9yIlrwhjsBbk6ZOD6_uewwp3x2w6-kPZO6c8/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
+let masterExerciseList = []; // ★ 運動課題全体を記憶するバケツ
+
+function showMsg(text) { document.getElementById('modal-text').innerText = text; document.getElementById('modal-bg').style.display = 'flex'; }
+function closeModal() { document.getElementById('modal-bg').style.display = 'none'; }
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
-    window[id] = (data) => {
-        callback(data);
-        const el = document.getElementById(id);
-        if (el) document.body.removeChild(el);
-        delete window[id];
-    };
-    const script = document.createElement('script');
-    script.id = id;
+    window[id] = (data) => { callback(data); document.body.removeChild(document.getElementById(id)); delete window[id]; };
+    const script = document.createElement('script'); script.id = id;
     const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
     script.src = `${GAS_URL}?${query}&callback=${id}`;
     document.body.appendChild(script);
 }
 
-function getFormIdFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('id') || 'a';
-}
-
 window.onload = () => {
-    activeFormId = getFormIdFromUrl().toLowerCase();
-
     callGAS({ action: 'init', id: activeFormId }, (data) => {
         icf_data.participation = data.participation_lists || [];
         icf_data.activity = data.activity_lists || [];
         icf_data.function = data.function_lists || [];
+        masterExerciseList = data.exercise_lists || []; // ★ シート全体を記憶
         
-        const configRows = data.config || [];
-        const headers = configRows[0]; 
-        const orderIdx = headers.findIndex(h => String(h).toLowerCase().trim().includes("form_" + activeFormId));
-        
-        if (orderIdx === -1) {
-            document.getElementById('loading').innerText = "エラー: Config列 'Form_" + activeFormId + "' 不足";
-            return;
-        }
+        const displayConfig = (data.config || []).filter(row => {
+            const fSetting = String(row[5] || "").trim().toLowerCase();
+            const targetIds = fSetting.split(',').map(s => s.trim());
+            return (fSetting === "" || targetIds.includes(activeFormId));
+        }).sort((a, b) => (Number(a[6]) || 999) - (Number(b[6]) || 999));
 
-        const titleRow = configRows.find(row => {
-            const key = String(row[0] || "").toLowerCase().trim();
-            return key === "form_title_" + activeFormId || key === "orm_title_" + activeFormId;
-        });
-
-        if (titleRow && titleRow[orderIdx]) {
-            const finalTitle = String(titleRow[orderIdx]).trim();
-            document.getElementById('display-title').innerText = finalTitle;
-            document.title = finalTitle;
-        }
-
-        let inputItems = [];
-        let mediaItems = [];
-
-        for (let i = 1; i < configRows.length; i++) {
-            const row = configRows[i];
-            const rawVal = row[orderIdx];
-            const orderNum = Number(rawVal);
-            if (!rawVal || isNaN(orderNum)) continue;
-
-            const itemObj = { 
-                name: row[0], type: String(row[1] || "").trim().toLowerCase(), 
-                options: row[2] ? String(row[2]).split(',') : [], 
-                limit: row[3], url: row[4], order: orderNum 
-            };
-            if (orderNum <= MEDIA_THRESHOLD) mediaItems.push(itemObj);
-            else inputItems.push(itemObj);
-        }
-
-        inputItems.sort((a, b) => a.order - b.order);
-        mediaItems.sort((a, b) => a.order - b.order);
-
-        render(inputItems);
-        
-        let mediaDataMap = { "PDFリンク": data.last_pdf_link || "" }; 
-        mediaItems.forEach(item => { mediaDataMap[item.name] = item.url; });
-        updateFaceTab(mediaDataMap);
-
+        render(displayConfig);
+        updateFaceTab(displayConfig);
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
     });
 };
 
-function render(items) {
+function render(config) {
     const fieldsDiv = document.getElementById('fields');
     fieldsDiv.innerHTML = '';
-    
-    items.forEach(item => {
-        const name = item.name, type = item.type, options = item.options, limit = item.limit, imageUrl = item.url;
-
-        // ★ Face情報などのメディアURLは隠しinputにして送信対象にする
-        if (name.includes('優先') || type === 'face' || type === 'movie' || name === "face情報" || name === "顔写真" || name === "動画") {
-            const hidden = document.createElement('input');
-            hidden.type = 'hidden'; hidden.name = name; hidden.value = imageUrl || "";
-            fieldsDiv.appendChild(hidden);
+    config.forEach(row => {
+        const name = row[0], type = String(row[1]).trim().toLowerCase(), url = row[4], options = row[2] ? String(row[2]).split(',') : [];
+        if (!name || name === "項目名") return;
+        if (type === 'face' || type === 'movie' || name.includes('優先')) {
+            fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
             return;
         }
-
-        const group = document.createElement('div');
-        group.className = 'field-group';
-
-        if (imageUrl && imageUrl.startsWith('http')) {
-            const imgIdMatch = imageUrl.match(/[-\w]{25,}/);
-            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : imageUrl;
-            const img = document.createElement('img');
-            img.src = src;
-            img.style = "width:100%; border-radius:8px; margin-top:10px; margin-bottom:10px; border:1px solid #ddd; display:block;";
-            group.appendChild(img);
-        }
+        const group = document.createElement('div'); group.className = 'field-group';
         
-        let input;
-        if (type === 'checkbox') {
-            group.classList.add('checkbox-group');
-            input = document.createElement('input');
-            input.type = 'checkbox';
-            input.id = `check-${name}`;
-            input.name = name;
-            input.dataset.onValue = options[0] || "★"; 
-            const label = document.createElement('label');
-            label.htmlFor = input.id;
-            label.innerText = name;
-            group.appendChild(input);
-            group.appendChild(label);
-        } else {
-            group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
-
-            if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
-                input = document.createElement('select');
-                input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
-                input.dataset.lv = type.split('_')[1];
-                input.dataset.source = type.split('_')[0]; 
-                input.addEventListener('change', (e) => { syncICF(e.target); });
-            } else if (type === 'select' || options.length > 0) {
-                input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
-                options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-            } else if (type === 'textarea' || type === 'testarea') {
-                input = document.createElement('textarea'); input.rows = 4;
-            } else {
-                input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
-            }
-            input.name = name;
-            group.appendChild(input);
-        }
-        fieldsDiv.appendChild(group);
-    });
-    initICF();
-}
-
-function updateFaceTab(data) {
-    const faceArea = document.getElementById('face-img-area');
-    if (!faceArea) return;
-    faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
-
-    if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
-        const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
-        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
-        faceArea.appendChild(pdfLabel);
-        const pdfContainer = document.createElement('div');
-        pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px; -webkit-overflow-scrolling:touch;";
-        const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
-        pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
-    }
-
-    Object.keys(data).forEach(key => {
-        const url = data[key];
-        if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
-        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
-        if (url.includes("youtu")) {
-            let vId = url.includes("youtu.be/") ? url.split("youtu.be/")[1].split(/[?#]/)[0] : url.split("v=")[1].split("&")[0];
-            const iframe = document.createElement('iframe');
-            iframe.width = "100%"; iframe.height = "250"; iframe.src = `https://www.youtube.com/embed/${vId}`;
-            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
-            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
-            faceArea.appendChild(iframe);
-        } else {
+        // ガイド画像の表示ロジック
+        if (url && url.startsWith('http')) {
             const imgIdMatch = url.match(/[-\w]{25,}/);
             const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
             const img = document.createElement('img');
-            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
-            faceArea.appendChild(img);
+            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:10px; border:1px solid #ddd; display:block;";
+            group.appendChild(img);
         }
+
+        group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
+        
+        let input;
+        if (type === 'select' || options.length > 0) {
+            input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
+            options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+            
+            // ★ 課題選択時の自動連動
+            if (name.endsWith("_課題")) {
+                input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
+                const hint = document.createElement('span');
+                hint.className = 'auto-fill-hint';
+                hint.innerText = "※選択すると「運動の目的」が自動入力されます";
+                group.appendChild(hint);
+            }
+        } else if (type === 'textarea') {
+            input = document.createElement('textarea'); input.rows = 4;
+        } else {
+            input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
+        }
+        
+        input.name = name;
+        group.appendChild(input);
+        fieldsDiv.appendChild(group);
     });
 }
 
-function searchData() {
-    const email = document.getElementById('search-email').value;
-    const alertEl = document.getElementById('search-alert');
-    if (!email) return alert("メールアドレスを入力してください");
-    alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
-    callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
-        document.getElementById('loading').style.display = 'none';
-        if (!res || !res.data) return alert("履歴はありません");
-        const data = res.data;
-        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
-        updateFaceTab(data);
-        document.querySelectorAll('#mainForm [name]').forEach(el => {
-            if (data[el.name] !== undefined && !el.dataset.lv) {
-                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
-                else el.value = data[el.name];
-            }
-        });
-        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
-        for (const major of icfMajors) {
-            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
-            if (mVal) {
-                major.value = mVal; syncICF(major);
-                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-                await pollForValue(middle, String(data[middle.name]||"").trim());
-                if (middle && middle.value) {
-                    syncICF(middle);
-                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-                    if(minor) await pollForValue(minor, String(data[minor.name]||"").trim());
-                }
-            }
-        }
-        alert("履歴を同期しました。");
+/**
+ * ★ 推奨目的の自動流し込み
+ */
+function handleTaskAutoFill(selectEl) {
+    const taskName = selectEl.value;
+    const prefix = selectEl.name.split('_')[0]; // 例: "体幹"
+    const targetName = prefix + "_運動の目的";
+    const targetInput = document.querySelector(`[name="${targetName}"]`);
+
+    if (!taskName || !targetInput) return;
+
+    // 記憶した masterExerciseList から検索
+    // A:カテゴリー, B:課題, F:推奨目的
+    const foundRow = masterExerciseList.slice(1).find(row => {
+        const rowCat = String(row[0]).trim();
+        const rowTask = String(row[1]).trim();
+        return (rowCat.includes(prefix) || prefix.includes(rowCat)) && rowTask === taskName;
+    });
+
+    if (foundRow && foundRow[5]) {
+        targetInput.value = foundRow[5];
+        // 視覚的なフィードバック
+        targetInput.classList.add('flash-active');
+        setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
+    }
+}
+
+function updateFaceTab(config) {
+    const area = document.getElementById('face-img-area');
+    area.innerHTML = "<h3>Face情報</h3>";
+    config.filter(r => String(r[1]).trim().toLowerCase() === 'face' || String(r[1]).trim().toLowerCase() === 'movie').forEach(r => {
+        const lbl = document.createElement('div'); lbl.className = 'media-label'; lbl.innerText = r[0]; area.appendChild(lbl);
+        // (省略：画像・動画表示)
     });
 }
 
 function sendData() {
     if (!confirm("送信しますか？")) return;
     document.getElementById('overlay').style.display = 'flex';
-    const btn = document.querySelector('.btn-send');
-    btn.disabled = true;
-    const payload = { "formid": activeFormId }; // ★ 送信キーを formid に統一
-    document.querySelectorAll('#mainForm [name]').forEach(el => {
-        if (el.type === 'checkbox') payload[el.name] = el.checked ? (el.dataset.onValue || "★") : "";
-        else payload[el.name] = el.value;
-    });
+    const payload = { "formid": activeFormId }; 
+    document.querySelectorAll('#mainForm [name]').forEach(el => payload[el.name] = el.value);
     fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) })
     .then(r => r.text()).then(res => {
         document.getElementById('overlay').style.display = 'none';
-        alert(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
-        btn.disabled = false;
-    }).catch(e => { 
-        document.getElementById('overlay').style.display = 'none';
-        alert("通信エラー"); btn.disabled = false;
-    });
-}
-
-function syncICF(target) {
-    const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
-    const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
-    const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
-    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
-    if (lv === 'major' && middle) {
-        middle.innerHTML = '<option value="">-- 選択 --</option>';
-        const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
-        [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v && v !== "undefined").forEach(v => middle.add(new Option(v, v)));
-    } else if (lv === 'middle' && minor) {
-        minor.innerHTML = '<option value="">-- 選択 --</option>';
-        list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
-            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v)); });
-    }
-}
-
-function initICF() {
-    document.querySelectorAll('select[data-lv="major"]').forEach(el => {
-        const list = icf_data[el.dataset.source];
-        el.innerHTML = '<option value="">-- 選択 --</option>';
-        [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v && v !== "undefined").forEach(v => el.add(new Option(v, v)));
-    });
-}
-
-function pollForValue(el, val) {
-    return new Promise(res => {
-        if(!el) return res();
-        let c = 0; const i = setInterval(() => {
-            if (Array.from(el.options).some(o => o.value === val)) { el.value = val; clearInterval(i); res(); }
-            else if (c++ > 20) { clearInterval(i); res(); }
-        }, 100);
+        showMsg(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
     });
 }
 
