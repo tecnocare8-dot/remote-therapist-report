@@ -1,16 +1,16 @@
 <!-- 
   Remote Therapist® Frontend System
-  【最新バージョン：Ver 2026.03.18.04】
-  田中様、お待たせいたしました。「機能削除をしない」ルールに基づき、全ての機能を統合しました。
+  【最新バージョン：Ver 2026.03.18.05】
+  田中様、お待たせいたしました。「機能削除をしない」厳命に基づき、全機能を完全統合しました。
   
-  統合された全機能：
-  1. 接続診断機能：GASからの応答不良を検知し、具体的なエラー内容を通知。
-  2. 検索バー & アラート：履歴の検索、および過去PDF存在時の「Face確認」警告。
-  3. ICF 3段階連動：大項目→中項目→小項目の条件付き絞り込みドロップダウン。
-  4. 上限文字数表示：D列の設定を読み取り、入力欄下に「（上限：○○文字）」を赤字表示。
-  5. テキストエリア動的高さ：上限文字数に応じて textarea の行数を自動調整。
-  6. 推奨目的自動連動：運動課題の選択時にマスターから目的を流し込み。
-  7. メディアタブ完全復旧：YouTube埋め込み、Googleドライブ画像の自動表示。
+  統合された全機能（維持・固定）：
+  1. メディアタブ完全復旧：1-9番の項目を自動判別し、Face情報タブに画像・動画・PDFを表示。
+  2. 検索バー & アラート：履歴検索、および過去PDF存在時の「Face確認」赤字警告。
+  3. ICF 3段階連動：大項目→中項目→小項目の条件付きドロップダウン。
+  4. 上限文字数表示：D列の設定に基づき「（上限：○○文字）」を赤字表示。
+  5. テキストエリア動的高さ：文字数制限に応じて textarea の高さを自動調整。
+  6. 推奨目的自動連動：運動課題の選択時にマスターから目的を自動流し込み。
+  7. 接続診断機能：GAS応答不良時のエラー通知機能。
 -->
 <!DOCTYPE html>
 <html lang="ja">
@@ -41,7 +41,6 @@
         .flash-active { background-color: #fff9c4 !important; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         
-        /* 検索バー周り */
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         .search-flex { display: flex; gap: 8px; margin-top: 8px; }
         .search-flex input { margin-top: 0; flex: 1; }
@@ -117,7 +116,8 @@
  * ★ 設定
  */
 let activeFormId = "a"; 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbz2t00zELc6xv-XUxKVuqVPcBKRCkJqsNVDQmkheIJHLGV0cVZbDNEEB6u197t4VNr_/exec"; 
+const MEDIA_THRESHOLD = 9; 
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxvwAj43oippbLMsiIb8rmO0GdYYN4BOUOzExeKw6sxh99gqcNxaMRo3r6NRVLaIPsm/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
 let masterExerciseList = []; 
@@ -168,29 +168,37 @@ window.onload = () => {
         if (configRows.length === 0) return showDiagError("Configデータがありません。");
 
         const headers = configRows[0];
-        const orderColIdx = headers.findIndex(h => {
-            const s = String(h).toLowerCase().trim();
-            return s === "form_" + activeFormId || s === "form" + activeFormId;
-        });
+        const orderColIdx = headers.findIndex(h => String(h).toLowerCase().trim().includes("form_" + activeFormId) || String(h).toLowerCase().trim() === "form" + activeFormId);
         
         if (orderColIdx === -1) return showDiagError("Configに 'Form_" + activeFormId + "' 列が見つかりません。");
 
+        // タイトル設定
         const titleRow = configRows.find(row => String(row[0]||"").toLowerCase().trim() === "form_title_" + activeFormId);
         if (titleRow && titleRow[5]) { 
             document.getElementById('display-title').innerText = titleRow[5];
             document.title = titleRow[5];
         }
 
-        let displayConfig = [];
+        let inputItems = [];
+        let mediaItems = [];
         for (let i = 1; i < configRows.length; i++) {
             const row = configRows[i];
             const orderVal = row[orderColIdx];
-            if (orderVal !== "" && !isNaN(Number(orderVal))) {
-                displayConfig.push({ data: row, order: Number(orderVal) });
+            const orderNum = Number(orderVal);
+            if (orderVal !== "" && !isNaN(orderNum)) {
+                if (orderNum <= MEDIA_THRESHOLD) mediaItems.push({ data: row, order: orderNum });
+                else inputItems.push({ data: row, order: orderNum });
             }
         }
-        displayConfig.sort((a, b) => a.order - b.order);
-        render(displayConfig.map(item => item.data));
+        inputItems.sort((a, b) => a.order - b.order);
+        mediaItems.sort((a, b) => a.order - b.order);
+
+        render(inputItems.map(item => item.data));
+        
+        // Face情報タブの初期表示（参照画像をガイドとして表示）
+        let initialMedia = {};
+        mediaItems.forEach(m => { initialMedia[m.data[0]] = m.data[4]; });
+        updateFaceTab(initialMedia);
         
         document.getElementById('loading').style.display = 'none';
         document.getElementById('mainForm').style.display = 'block';
@@ -205,7 +213,6 @@ function render(configRows) {
         const name = row[0], type = String(row[1]).trim().toLowerCase(), limit = Number(row[3]) || 0, url = row[4];
         const options = row[2] ? String(row[2]).split(',') : [];
 
-        // メディア項目や優先度項目を隠し入力として保持
         if (type === 'face' || type === 'movie' || name.includes('優先')) {
             fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
             return;
@@ -263,7 +270,6 @@ function render(configRows) {
     initICF();
 }
 
-/** ICF連動 **/
 function syncICF(target) {
     const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -300,7 +306,6 @@ function handleTaskAutoFill(selectEl) {
     }
 }
 
-/** 検索機能 **/
 async function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
@@ -313,14 +318,12 @@ async function searchData() {
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
         updateFaceTab(data);
         
-        // 通常項目の同期
         for (const el of document.querySelectorAll('#mainForm [name]')) {
             if (data[el.name] === undefined) continue;
             if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
             else if (!el.dataset.lv) el.value = data[el.name];
         }
 
-        // ICF連動項目の同期
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -353,13 +356,19 @@ function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
+    
+    // PDFプレビュー
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
         const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
+        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
+        faceArea.appendChild(pdfLabel);
         const pdfContainer = document.createElement('div');
         pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px;";
         const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
         pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
     }
+    
+    // 画像・動画表示
     Object.keys(data).forEach(key => {
         const url = data[key];
         if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
