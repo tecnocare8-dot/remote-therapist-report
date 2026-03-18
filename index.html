@@ -1,3 +1,17 @@
+<!-- 
+  Remote Therapist® Frontend System
+  【最新バージョン：Ver 2026.03.18.04】
+  田中様、お待たせいたしました。「機能削除をしない」ルールに基づき、全ての機能を統合しました。
+  
+  統合された全機能：
+  1. 接続診断機能：GASからの応答不良を検知し、具体的なエラー内容を通知。
+  2. 検索バー & アラート：履歴の検索、および過去PDF存在時の「Face確認」警告。
+  3. ICF 3段階連動：大項目→中項目→小項目の条件付き絞り込みドロップダウン。
+  4. 上限文字数表示：D列の設定を読み取り、入力欄下に「（上限：○○文字）」を赤字表示。
+  5. テキストエリア動的高さ：上限文字数に応じて textarea の行数を自動調整。
+  6. 推奨目的自動連動：運動課題の選択時にマスターから目的を流し込み。
+  7. メディアタブ完全復旧：YouTube埋め込み、Googleドライブ画像の自動表示。
+-->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -27,7 +41,7 @@
         .flash-active { background-color: #fff9c4 !important; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         
-        /* 検索・診断スタイル */
+        /* 検索バー周り */
         .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
         .search-flex { display: flex; gap: 8px; margin-top: 8px; }
         .search-flex input { margin-top: 0; flex: 1; }
@@ -55,6 +69,7 @@
         }
         .checkbox-group label { margin: 0; cursor: pointer; flex: 1; font-weight: bold; font-size: 18px; }
         .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
+        .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -95,7 +110,7 @@
     </div>
 </div>
 
-<div id="tab-face" class="tab-content" style="display:none;"><div class="container"><div id="face-img-area"></div></div></div>
+<div id="tab-face" class="tab-content" style="display:none;"><div class="container" id="face-img-area"></div></div>
 
 <script>
 /**
@@ -153,7 +168,10 @@ window.onload = () => {
         if (configRows.length === 0) return showDiagError("Configデータがありません。");
 
         const headers = configRows[0];
-        const orderColIdx = headers.findIndex(h => String(h).toLowerCase().trim() === "form_" + activeFormId || String(h).toLowerCase().trim() === "form" + activeFormId);
+        const orderColIdx = headers.findIndex(h => {
+            const s = String(h).toLowerCase().trim();
+            return s === "form_" + activeFormId || s === "form" + activeFormId;
+        });
         
         if (orderColIdx === -1) return showDiagError("Configに 'Form_" + activeFormId + "' 列が見つかりません。");
 
@@ -187,6 +205,7 @@ function render(configRows) {
         const name = row[0], type = String(row[1]).trim().toLowerCase(), limit = Number(row[3]) || 0, url = row[4];
         const options = row[2] ? String(row[2]).split(',') : [];
 
+        // メディア項目や優先度項目を隠し入力として保持
         if (type === 'face' || type === 'movie' || name.includes('優先')) {
             fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
             return;
@@ -209,7 +228,6 @@ function render(configRows) {
         } else {
             group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
-            // ICF連動ロジック用判定
             if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
                 input = document.createElement('select');
                 input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
@@ -219,7 +237,11 @@ function render(configRows) {
             } else if (type === 'select' || options.length > 0) {
                 input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                 options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                if (name.endsWith("_課題")) input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
+                if (name.endsWith("_課題")) {
+                    input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
+                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
+                    group.appendChild(hint);
+                }
             } else if (type === 'textarea') {
                 input = document.createElement('textarea'); 
                 if (limit >= 300) input.rows = 10;
@@ -238,10 +260,10 @@ function render(configRows) {
         }
         fieldsDiv.appendChild(group);
     });
-    initICF(); // ICF初期化
+    initICF();
 }
 
-/** 【復旧】ICF連動ロジック **/
+/** ICF連動 **/
 function syncICF(target) {
     const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -278,8 +300,8 @@ function handleTaskAutoFill(selectEl) {
     }
 }
 
-/** 【復旧】検索機能 **/
-function searchData() {
+/** 検索機能 **/
+async function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
@@ -290,13 +312,40 @@ function searchData() {
         const data = res.data;
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
         updateFaceTab(data);
-        document.querySelectorAll('#mainForm [name]').forEach(el => {
-            if (data[el.name] !== undefined) {
-                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
-                else el.value = data[el.name];
+        
+        // 通常項目の同期
+        for (const el of document.querySelectorAll('#mainForm [name]')) {
+            if (data[el.name] === undefined) continue;
+            if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
+            else if (!el.dataset.lv) el.value = data[el.name];
+        }
+
+        // ICF連動項目の同期
+        const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
+        for (const major of icfMajors) {
+            const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
+            if (mVal) {
+                major.value = mVal; syncICF(major);
+                const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+                await pollForValue(middle, String(data[middle.name]||"").trim());
+                if (middle && middle.value) {
+                    syncICF(middle);
+                    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+                    if(minor) await pollForValue(minor, String(data[minor.name]||"").trim());
+                }
             }
-        });
+        }
         alert("履歴を同期しました。");
+    });
+}
+
+function pollForValue(el, val) {
+    return new Promise(res => {
+        if(!el) return res();
+        let c = 0; const i = setInterval(() => {
+            if (Array.from(el.options).some(o => o.value === val)) { el.value = val; clearInterval(i); res(); }
+            else if (c++ > 20) { clearInterval(i); res(); }
+        }, 100);
     });
 }
 
