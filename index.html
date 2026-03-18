@@ -1,12 +1,3 @@
-<!-- 
-  Remote Therapist® Frontend System
-  【最新バージョン：Ver 2026.03.18.02】
-  更新内容：
-  1. 接続診断機能：15秒応答がない場合にエラー内容を画面に赤字で表示します。
-  2. 上限文字数の赤字表示：D列の数値を参照し、入力欄の下に「（上限：○○文字）」を赤字で表示。
-  3. テキストエリア高さ連動：上限文字数に応じて入力欄の高さ（rows）を動的に変更。
-  4. 推奨目的の自動入力：課題選択時にF列の文字を流し込み、黄色くフラッシュ。
--->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -36,7 +27,13 @@
         .flash-active { background-color: #fff9c4 !important; }
         .btn-send { width: 100%; padding: 18px; background: #1a73e8; color: white; border:none; border-radius:8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         
-        /* 診断・エラー表示 */
+        /* 検索・診断スタイル */
+        .search-area { background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1a73e8; }
+        .search-flex { display: flex; gap: 8px; margin-top: 8px; }
+        .search-flex input { margin-top: 0; flex: 1; }
+        .btn-search { width: auto; padding: 0 20px; background: #1a73e8; color: white; border:none; border-radius:8px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        #search-alert { color: #d93025; font-size: 14px; font-weight: bold; margin-top: 10px; display: none; }
+
         #loading { text-align: center; padding: 50px; font-weight: bold; color: #666; }
         #error-msg { display: none; background: #fce8e6; color: #d93025; padding: 15px; border-radius: 8px; margin: 20px; border: 1px solid #d93025; font-size: 14px; white-space: pre-wrap; }
 
@@ -62,7 +59,7 @@
 </head>
 <body>
 
-<div id="overlay"><div class="spinner"></div><div>データを送信・PDFを生成中...</div></div>
+<div id="overlay"><div class="spinner"></div><div>データを送信中...</div></div>
 <div id="modal-bg" class="modal-bg"><div class="modal-content"><p id="modal-text"></p><button class="modal-btn" onclick="closeModal()">OK</button></div></div>
 
 <div class="tab-menu">
@@ -80,6 +77,15 @@
         <div id="error-msg"></div>
 
         <div style="padding:20px;">
+            <div class="search-area">
+                <label>患者データ検索（メールアドレス）</label>
+                <div class="search-flex">
+                    <input type="email" id="search-email" placeholder="example@gmail.com">
+                    <button type="button" class="btn-search" onclick="searchData()">検索</button>
+                </div>
+                <div id="search-alert">作成されたレポートがあります。Face情報を確認ください</div>
+            </div>
+
             <div id="loading">📡 設定をロード中...</div>
             <form id="mainForm" style="display:none;">
                 <div id="fields"></div>
@@ -96,7 +102,6 @@
  * ★ 設定
  */
 let activeFormId = "a"; 
-// 田中様の最新デプロイURL
 const GAS_URL = "https://script.google.com/macros/s/AKfycbz2t00zELc6xv-XUxKVuqVPcBKRCkJqsNVDQmkheIJHLGV0cVZbDNEEB6u197t4VNr_/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
@@ -107,32 +112,26 @@ function showDiagError(msg) {
     clearTimeout(loadTimer);
     document.getElementById('loading').style.display = 'none';
     const err = document.getElementById('error-msg');
-    err.innerText = "❌ エラー発生:\n" + msg + "\n\n【確認事項】\n1. GASの公開設定が「全員(Anonymous)」ですか？\n2. URL末尾が /exec ですか？\n3. シート名(config等)を変更していませんか？";
+    err.innerText = "❌ エラー発生:\n" + msg;
     err.style.display = 'block';
 }
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
-    
-    // 15秒のタイムアウト設定
-    loadTimer = setTimeout(() => {
-        showDiagError("GASからの応答がありません。ネットワークまたはGASのデプロイ設定を確認してください。");
-    }, 15000);
-
+    loadTimer = setTimeout(() => { showDiagError("GASからの応答がありません。ネットワーク設定を確認してください。"); }, 15000);
     window[id] = (data) => { 
         clearTimeout(loadTimer);
-        if (data.error) return showDiagError("GAS内部エラー: " + data.error);
+        if (data.error) return showDiagError(data.error);
         callback(data); 
         const scriptTag = document.getElementById(id);
         if (scriptTag) document.body.removeChild(scriptTag);
         delete window[id]; 
     };
-
     const script = document.createElement('script'); 
     script.id = id;
     const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
     script.src = `${GAS_URL}?${query}&callback=${id}`;
-    script.onerror = () => showDiagError("スクリプトの読み込みに失敗しました。URLが正しいか確認してください。");
+    script.onerror = () => showDiagError("スクリプト読み込みエラー。URLを確認してください。");
     document.body.appendChild(script);
 }
 
@@ -151,15 +150,12 @@ window.onload = () => {
         masterExerciseList = data.exercise_lists || []; 
         
         const configRows = data.config || [];
-        if (configRows.length === 0) return showDiagError("Configデータが空です。シート名を確認してください。");
+        if (configRows.length === 0) return showDiagError("Configデータがありません。");
 
         const headers = configRows[0];
-        const orderColIdx = headers.findIndex(h => {
-            const s = String(h).toLowerCase().trim();
-            return s === "form_" + activeFormId || s === "form" + activeFormId;
-        });
+        const orderColIdx = headers.findIndex(h => String(h).toLowerCase().trim() === "form_" + activeFormId || String(h).toLowerCase().trim() === "form" + activeFormId);
         
-        if (orderColIdx === -1) return showDiagError("Configの1行目に 'Form_" + activeFormId + "' 列が見つかりません。");
+        if (orderColIdx === -1) return showDiagError("Configに 'Form_" + activeFormId + "' 列が見つかりません。");
 
         const titleRow = configRows.find(row => String(row[0]||"").toLowerCase().trim() === "form_title_" + activeFormId);
         if (titleRow && titleRow[5]) { 
@@ -175,7 +171,6 @@ window.onload = () => {
                 displayConfig.push({ data: row, order: Number(orderVal) });
             }
         }
-
         displayConfig.sort((a, b) => a.order - b.order);
         render(displayConfig.map(item => item.data));
         
@@ -189,8 +184,8 @@ function render(configRows) {
     fieldsDiv.innerHTML = '';
     
     configRows.forEach(row => {
-        const name = row[0], type = String(row[1]).trim().toLowerCase(), options = row[2] ? String(row[2]).split(',') : [], limit = Number(row[3]) || 0, url = row[4];
-        if (!name || name === "項目名" || name.includes("templateid") || name.includes("form_title")) return;
+        const name = row[0], type = String(row[1]).trim().toLowerCase(), limit = Number(row[3]) || 0, url = row[4];
+        const options = row[2] ? String(row[2]).split(',') : [];
 
         if (type === 'face' || type === 'movie' || name.includes('優先')) {
             fieldsDiv.appendChild(Object.assign(document.createElement('input'), { type: 'hidden', name: name, value: url || "" }));
@@ -208,23 +203,25 @@ function render(configRows) {
         if (type === 'checkbox') {
             group.classList.add('checkbox-group');
             input = document.createElement('input'); input.type = 'checkbox'; input.name = name; input.id = name;
-            input.dataset.onValue = options[0] || "★"; 
+            input.dataset.onValue = options[0] || "★";
             const lbl = document.createElement('label'); lbl.htmlFor = name; lbl.innerText = name.includes('おすすめ') ? "オススメする" : name;
             group.appendChild(input); group.appendChild(lbl);
         } else {
             group.appendChild(Object.assign(document.createElement('label'), { innerText: name }));
 
-            if (type === 'select' || options.length > 0) {
+            // ICF連動ロジック用判定
+            if (type.includes('_major') || type.includes('_middle') || type.includes('_minor')) {
+                input = document.createElement('select');
+                input.dataset.group = name.replace(/_ICF(大|中|小)$/, '').trim();
+                input.dataset.lv = type.split('_')[1];
+                input.dataset.source = type.split('_')[0]; 
+                input.addEventListener('change', (e) => { syncICF(e.target); });
+            } else if (type === 'select' || options.length > 0) {
                 input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                 options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                if (name.endsWith("_課題")) {
-                    input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
-                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
-                    group.appendChild(hint);
-                }
+                if (name.endsWith("_課題")) input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
             } else if (type === 'textarea') {
                 input = document.createElement('textarea'); 
-                // 【復旧】上限文字数に応じた高さ調整
                 if (limit >= 300) input.rows = 10;
                 else if (limit >= 150) input.rows = 7;
                 else if (limit >= 80) input.rows = 5;
@@ -232,17 +229,39 @@ function render(configRows) {
             } else {
                 input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
             }
-            
             input.name = name;
             group.appendChild(input);
-
-            // 【復旧】上限文字数の赤字表示
             if (limit > 0) {
                 const ll = document.createElement('span'); ll.className = 'limit-label'; ll.innerText = `（上限：${limit}文字）`;
                 group.appendChild(ll);
             }
         }
         fieldsDiv.appendChild(group);
+    });
+    initICF(); // ICF初期化
+}
+
+/** 【復旧】ICF連動ロジック **/
+function syncICF(target) {
+    const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
+    const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
+    const middle = document.querySelector(`select[data-group="${g}"][data-lv="middle"]`);
+    const minor = document.querySelector(`select[data-group="${g}"][data-lv="minor"]`);
+    if (lv === 'major' && middle) {
+        middle.innerHTML = '<option value="">-- 選択 --</option>';
+        const filtered = list.filter(r => String(r[0]).trim() === String(target.value).trim());
+        [...new Set(filtered.map(r => String(r[1]).trim()))].filter(v => v && v !== "undefined").forEach(v => middle.add(new Option(v, v)));
+    } else if (lv === 'middle' && minor) {
+        minor.innerHTML = '<option value="">-- 選択 --</option>';
+        list.filter(r => String(r[0]).trim() === String(major.value).trim() && String(r[1]).trim() === String(target.value).trim())
+            .forEach(r => { let v = String(r[2] || "").trim(); if (v && v !== "undefined") minor.add(new Option(v, v)); });
+    }
+}
+function initICF() {
+    document.querySelectorAll('select[data-lv="major"]').forEach(el => {
+        const list = icf_data[el.dataset.source];
+        el.innerHTML = '<option value="">-- 選択 --</option>';
+        if(list) [...new Set(list.map(r => String(r[0]).trim()))].filter(v => v && v !== "undefined").forEach(v => el.add(new Option(v, v)));
     });
 }
 
@@ -255,8 +274,62 @@ function handleTaskAutoFill(selectEl) {
     if (foundRow && foundRow[5]) {
         targetInput.value = foundRow[5];
         targetInput.classList.add('flash-active');
-        setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
+        setTimeout(() => targetInput.classList.remove('flash-active'), 600);
     }
+}
+
+/** 【復旧】検索機能 **/
+function searchData() {
+    const email = document.getElementById('search-email').value;
+    const alertEl = document.getElementById('search-alert');
+    if (!email) return alert("メールアドレスを入力してください");
+    alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
+    callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!res || !res.data) return alert("履歴はありません");
+        const data = res.data;
+        if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
+        updateFaceTab(data);
+        document.querySelectorAll('#mainForm [name]').forEach(el => {
+            if (data[el.name] !== undefined) {
+                if (el.type === 'checkbox') el.checked = (data[el.name] === el.dataset.onValue);
+                else el.value = data[el.name];
+            }
+        });
+        alert("履歴を同期しました。");
+    });
+}
+
+function updateFaceTab(data) {
+    const faceArea = document.getElementById('face-img-area');
+    if (!faceArea) return;
+    faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
+    if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
+        const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
+        const pdfContainer = document.createElement('div');
+        pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px;";
+        const iframe = document.createElement('iframe'); iframe.src = embedUrl; iframe.style = "width:100%; height:100%; border:none;";
+        pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
+    }
+    Object.keys(data).forEach(key => {
+        const url = data[key];
+        if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
+        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
+        if (url.includes("youtu")) {
+            let vId = url.includes("youtu.be/") ? url.split("youtu.be/")[1].split(/[?#]/)[0] : url.split("v=")[1].split("&")[0];
+            const iframe = document.createElement('iframe');
+            iframe.width = "100%"; iframe.height = "250"; iframe.src = `https://www.youtube.com/embed/${vId}`;
+            iframe.frameBorder = "0"; iframe.allowFullscreen = true;
+            iframe.style = "border-radius:8px; margin-bottom:20px; display:block;";
+            faceArea.appendChild(iframe);
+        } else {
+            const imgIdMatch = url.match(/[-\w]{25,}/);
+            const src = imgIdMatch ? `https://drive.google.com/thumbnail?id=${imgIdMatch[0]}&sz=w1000` : url;
+            const img = document.createElement('img');
+            img.src = src; img.style = "width:100%; border-radius:8px; margin-bottom:20px; border:1px solid #ddd; display:block;";
+            faceArea.appendChild(img);
+        }
+    });
 }
 
 function sendData() {
@@ -271,10 +344,7 @@ function sendData() {
     .then(r => r.text()).then(res => {
         document.getElementById('overlay').style.display = 'none';
         showMsg(res.includes("SUCCESS") ? "送信完了しました。" : "エラー: " + res);
-    }).catch(e => {
-        document.getElementById('overlay').style.display = 'none';
-        showMsg("通信エラーが発生しました。");
-    });
+    }).catch(e => { document.getElementById('overlay').style.display = 'none'; showMsg("通信エラー"); });
 }
 
 function showMsg(text) { document.getElementById('modal-text').innerText = text; document.getElementById('modal-bg').style.display = 'flex'; }
