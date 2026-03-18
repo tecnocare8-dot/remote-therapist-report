@@ -1,15 +1,16 @@
 <!-- 
   Remote Therapist® Frontend System
-  【最新バージョン：Ver 2026.03.18.07】
-  田中様、厳命を承りました。「機能削除をしない」ルールを最優先し、全機能を完全統合・固定しました。
+  【最新バージョン：Ver 2026.03.18.08】
+  田中様、自己点検の結果、漏れていた「デフォルト文章の表示」を復旧し、全機能を統合しました。
   
-  【完全統合された機能リスト - 削除厳禁】
-  1. 運動課題・推奨目的連動：マスター(exercise_lists)から目的を自動検索・転記。
-  2. 検索バー & 同期：患者履歴の検索、ICF3段階を含む全項目の完全同期。
-  3. Face情報タブ：PDF, YouTube, 画像の自動表示（1-9番優先）。
-  4. 上限文字数表示：D列参照による赤字ラベル「（上限：○○文字）」。
-  5. 柔軟なUI：文字数に応じた textarea 高調整、オススメ項目のラベル変換。
-  6. 接続診断機能：GAS通信エラー時の具体的な原因表示。
+  【完全統合・削除厳禁リスト】
+  1. 初期値表示：Config E列の文章を入力欄の初期値として反映（★復旧）。
+  2. 運動課題・推奨目的連動：マスターからの自動検索・転記（双方向マッチング）。
+  3. 検索バー & 履歴同期：ICF3段階を含む全項目の完全同期（poll処理）。
+  4. Face情報タブ：初期ガイド表示 ＋ 検索結果（PDF/動画/画像）の表示。
+  5. 上限文字数表示：D列参照による赤字ラベル ＋ textarea高さ自動調整。
+  6. オススメ項目のラベル置換：「オススメする」への自動変換。
+  7. 接続診断機能：GAS通信不良時の具体的エラー通知。
 -->
 <!DOCTYPE html>
 <html lang="ja">
@@ -72,7 +73,7 @@
 </head>
 <body>
 
-<div id="overlay"><div class="spinner"></div><div>データを送信・PDFを生成中...</div></div>
+<div id="overlay"><div class="spinner"></div><div>データを送信中...</div></div>
 <div id="modal-bg" class="modal-bg"><div class="modal-content"><p id="modal-text"></p><button class="modal-btn" onclick="closeModal()">OK</button></div></div>
 
 <div class="tab-menu">
@@ -132,7 +133,7 @@ function showDiagError(msg) {
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
-    loadTimer = setTimeout(() => { showDiagError("GAS応答なし。ネットワーク設定とURLを確認してください。"); }, 15000);
+    loadTimer = setTimeout(() => { showDiagError("GAS応答なし。URLとデプロイ設定を確認してください。"); }, 15000);
     window[id] = (data) => { 
         clearTimeout(loadTimer);
         if (data && data.error) return showDiagError(data.error);
@@ -145,7 +146,7 @@ function callGAS(params, callback) {
     script.id = id;
     const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
     script.src = `${GAS_URL}?${query}&callback=${id}`;
-    script.onerror = () => showDiagError("スクリプトの読み込みに失敗しました。");
+    script.onerror = () => showDiagError("スクリプト読み込みエラー。");
     document.body.appendChild(script);
 }
 
@@ -171,6 +172,7 @@ window.onload = () => {
         
         if (orderColIdx === -1) return showDiagError("Configに 'Form_" + activeFormId + "' 列が見つかりません。");
 
+        // タイトル設定
         const titleRow = configRows.find(row => String(row[0]||"").toLowerCase().trim() === "form_title_" + activeFormId);
         if (titleRow && titleRow[5]) { 
             document.getElementById('display-title').innerText = titleRow[5];
@@ -193,7 +195,7 @@ window.onload = () => {
 
         render(inputItems.map(item => item.data));
         
-        // 初期Face情報の構築
+        // 初期Face情報ガイドの構築
         let initialMedia = {};
         mediaItems.forEach(m => { initialMedia[m.data[0]] = m.data[4]; });
         updateFaceTab(initialMedia);
@@ -242,11 +244,9 @@ function render(configRows) {
             } else if (type === 'select' || options.length > 0) {
                 input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                 options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
-                
-                // ★ 運動課題の自動連動
                 if (name.endsWith("_課題")) {
                     input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
-                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「推奨目的」が自動入力されます";
+                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
                     group.appendChild(hint);
                 }
             } else if (type === 'textarea') {
@@ -260,6 +260,10 @@ function render(configRows) {
             }
             
             input.name = name;
+            // ★【復旧】デフォルト文章（E列）の流し込み
+            if (url && !url.startsWith('http')) {
+                input.value = url;
+            }
             group.appendChild(input);
 
             if (limit > 0) {
@@ -272,32 +276,26 @@ function render(configRows) {
     initICF();
 }
 
-/** 【復旧・維持】運動課題の推奨目的：検索・転記ロジック **/
+/** 【維持】運動課題の推奨目的：検索・転記ロジック **/
 function handleTaskAutoFill(selectEl) {
     const taskName = selectEl.value;
     const fieldName = selectEl.name;
-    const prefix = fieldName.split('_')[0]; // 例: "体幹"
+    const prefix = fieldName.split('_')[0]; 
     
-    // Configから「prefix_運動の目的」に該当する項目を動的に探す
-    // ※ターゲット名が「体幹_推奨目的」など揺れていても探せるようにします
     let targetInput = document.querySelector(`[name="${prefix}_運動の目的"]`) || 
                       document.querySelector(`[name="${prefix}_推奨目的"]`) ||
                       document.querySelector(`[name="${prefix}_目的"]`);
     
     if (!taskName || !targetInput) return;
 
-    // 記憶した masterExerciseList から検索
-    // A:カテゴリー, B:課題, F:推奨目的
     const foundRow = masterExerciseList.slice(1).find(row => {
         const rowCat = String(row[0]).trim();
         const rowTask = String(row[1]).trim();
-        // 双方向マッチングの復元
         return (rowCat.includes(prefix) || prefix.includes(rowCat)) && rowTask === taskName;
     });
 
     if (foundRow && foundRow[5]) {
         targetInput.value = foundRow[5];
-        // 視覚的演出
         targetInput.classList.add('flash-active');
         setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
     }
@@ -348,7 +346,6 @@ async function searchData() {
             else if (!el.dataset.lv) el.value = data[el.name];
         }
 
-        // ICF同期（pollロジック）
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -364,7 +361,6 @@ async function searchData() {
             }
         }
         
-        // ★ 検索同期後の「推奨目的」再取得（もし空欄なら流し込む）
         document.querySelectorAll('select[name$="_課題"]').forEach(sel => {
             if (sel.value) {
                 const prefix = sel.name.split('_')[0];
