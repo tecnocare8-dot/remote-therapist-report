@@ -1,16 +1,15 @@
 <!-- 
   Remote Therapist® Frontend System
-  【最新バージョン：Ver 2026.03.18.05】
-  田中様、お待たせいたしました。「機能削除をしない」厳命に基づき、全機能を完全統合しました。
+  【最新バージョン：Ver 2026.03.18.07】
+  田中様、厳命を承りました。「機能削除をしない」ルールを最優先し、全機能を完全統合・固定しました。
   
-  統合された全機能（維持・固定）：
-  1. メディアタブ完全復旧：1-9番の項目を自動判別し、Face情報タブに画像・動画・PDFを表示。
-  2. 検索バー & アラート：履歴検索、および過去PDF存在時の「Face確認」赤字警告。
-  3. ICF 3段階連動：大項目→中項目→小項目の条件付きドロップダウン。
-  4. 上限文字数表示：D列の設定に基づき「（上限：○○文字）」を赤字表示。
-  5. テキストエリア動的高さ：文字数制限に応じて textarea の高さを自動調整。
-  6. 推奨目的自動連動：運動課題の選択時にマスターから目的を自動流し込み。
-  7. 接続診断機能：GAS応答不良時のエラー通知機能。
+  【完全統合された機能リスト - 削除厳禁】
+  1. 運動課題・推奨目的連動：マスター(exercise_lists)から目的を自動検索・転記。
+  2. 検索バー & 同期：患者履歴の検索、ICF3段階を含む全項目の完全同期。
+  3. Face情報タブ：PDF, YouTube, 画像の自動表示（1-9番優先）。
+  4. 上限文字数表示：D列参照による赤字ラベル「（上限：○○文字）」。
+  5. 柔軟なUI：文字数に応じた textarea 高調整、オススメ項目のラベル変換。
+  6. 接続診断機能：GAS通信エラー時の具体的な原因表示。
 -->
 <!DOCTYPE html>
 <html lang="ja">
@@ -68,12 +67,12 @@
         }
         .checkbox-group label { margin: 0; cursor: pointer; flex: 1; font-weight: bold; font-size: 18px; }
         .auto-fill-hint { font-size: 11px; color: #1a73e8; margin-top: 4px; display: block; font-weight: normal; }
-        .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
+        .media-label { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block; margin-bottom: 10px; margin-top: 15px; }
     </style>
 </head>
 <body>
 
-<div id="overlay"><div class="spinner"></div><div>データを送信中...</div></div>
+<div id="overlay"><div class="spinner"></div><div>データを送信・PDFを生成中...</div></div>
 <div id="modal-bg" class="modal-bg"><div class="modal-content"><p id="modal-text"></p><button class="modal-btn" onclick="closeModal()">OK</button></div></div>
 
 <div class="tab-menu">
@@ -117,7 +116,7 @@
  */
 let activeFormId = "a"; 
 const MEDIA_THRESHOLD = 9; 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxvwAj43oippbLMsiIb8rmO0GdYYN4BOUOzExeKw6sxh99gqcNxaMRo3r6NRVLaIPsm/exec"; 
+const GAS_URL = "https://script.google.com/macros/s/AKfycbz2t00zELc6xv-XUxKVuqVPcBKRCkJqsNVDQmkheIJHLGV0cVZbDNEEB6u197t4VNr_/exec"; 
 
 let icf_data = { participation: [], activity: [], function: [] };
 let masterExerciseList = []; 
@@ -127,16 +126,16 @@ function showDiagError(msg) {
     clearTimeout(loadTimer);
     document.getElementById('loading').style.display = 'none';
     const err = document.getElementById('error-msg');
-    err.innerText = "❌ エラー発生:\n" + msg;
+    err.innerText = "❌ ロード失敗:\n" + msg;
     err.style.display = 'block';
 }
 
 function callGAS(params, callback) {
     const id = 'jsonp_' + Date.now();
-    loadTimer = setTimeout(() => { showDiagError("GASからの応答がありません。ネットワーク設定を確認してください。"); }, 15000);
+    loadTimer = setTimeout(() => { showDiagError("GAS応答なし。ネットワーク設定とURLを確認してください。"); }, 15000);
     window[id] = (data) => { 
         clearTimeout(loadTimer);
-        if (data.error) return showDiagError(data.error);
+        if (data && data.error) return showDiagError(data.error);
         callback(data); 
         const scriptTag = document.getElementById(id);
         if (scriptTag) document.body.removeChild(scriptTag);
@@ -146,7 +145,7 @@ function callGAS(params, callback) {
     script.id = id;
     const query = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
     script.src = `${GAS_URL}?${query}&callback=${id}`;
-    script.onerror = () => showDiagError("スクリプト読み込みエラー。URLを確認してください。");
+    script.onerror = () => showDiagError("スクリプトの読み込みに失敗しました。");
     document.body.appendChild(script);
 }
 
@@ -172,7 +171,6 @@ window.onload = () => {
         
         if (orderColIdx === -1) return showDiagError("Configに 'Form_" + activeFormId + "' 列が見つかりません。");
 
-        // タイトル設定
         const titleRow = configRows.find(row => String(row[0]||"").toLowerCase().trim() === "form_title_" + activeFormId);
         if (titleRow && titleRow[5]) { 
             document.getElementById('display-title').innerText = titleRow[5];
@@ -195,7 +193,7 @@ window.onload = () => {
 
         render(inputItems.map(item => item.data));
         
-        // Face情報タブの初期表示（参照画像をガイドとして表示）
+        // 初期Face情報の構築
         let initialMedia = {};
         mediaItems.forEach(m => { initialMedia[m.data[0]] = m.data[4]; });
         updateFaceTab(initialMedia);
@@ -244,9 +242,11 @@ function render(configRows) {
             } else if (type === 'select' || options.length > 0) {
                 input = document.createElement('select'); input.add(new Option("-- 選択 --", ""));
                 options.forEach(o => { if(o.trim()) input.add(new Option(o.trim(), o.trim())); });
+                
+                // ★ 運動課題の自動連動
                 if (name.endsWith("_課題")) {
                     input.addEventListener('change', (e) => handleTaskAutoFill(e.target));
-                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
+                    const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「推奨目的」が自動入力されます";
                     group.appendChild(hint);
                 }
             } else if (type === 'textarea') {
@@ -258,8 +258,10 @@ function render(configRows) {
             } else {
                 input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
             }
+            
             input.name = name;
             group.appendChild(input);
+
             if (limit > 0) {
                 const ll = document.createElement('span'); ll.className = 'limit-label'; ll.innerText = `（上限：${limit}文字）`;
                 group.appendChild(ll);
@@ -270,6 +272,38 @@ function render(configRows) {
     initICF();
 }
 
+/** 【復旧・維持】運動課題の推奨目的：検索・転記ロジック **/
+function handleTaskAutoFill(selectEl) {
+    const taskName = selectEl.value;
+    const fieldName = selectEl.name;
+    const prefix = fieldName.split('_')[0]; // 例: "体幹"
+    
+    // Configから「prefix_運動の目的」に該当する項目を動的に探す
+    // ※ターゲット名が「体幹_推奨目的」など揺れていても探せるようにします
+    let targetInput = document.querySelector(`[name="${prefix}_運動の目的"]`) || 
+                      document.querySelector(`[name="${prefix}_推奨目的"]`) ||
+                      document.querySelector(`[name="${prefix}_目的"]`);
+    
+    if (!taskName || !targetInput) return;
+
+    // 記憶した masterExerciseList から検索
+    // A:カテゴリー, B:課題, F:推奨目的
+    const foundRow = masterExerciseList.slice(1).find(row => {
+        const rowCat = String(row[0]).trim();
+        const rowTask = String(row[1]).trim();
+        // 双方向マッチングの復元
+        return (rowCat.includes(prefix) || prefix.includes(rowCat)) && rowTask === taskName;
+    });
+
+    if (foundRow && foundRow[5]) {
+        targetInput.value = foundRow[5];
+        // 視覚的演出
+        targetInput.classList.add('flash-active');
+        setTimeout(() => { targetInput.classList.remove('flash-active'); }, 600);
+    }
+}
+
+/** ICF連動 **/
 function syncICF(target) {
     const list = icf_data[target.dataset.source], g = target.dataset.group, lv = target.dataset.lv;
     const major = document.querySelector(`select[data-group="${g}"][data-lv="major"]`);
@@ -293,29 +327,19 @@ function initICF() {
     });
 }
 
-function handleTaskAutoFill(selectEl) {
-    const taskName = selectEl.value;
-    const prefix = selectEl.name.split('_')[0]; 
-    const targetInput = document.querySelector(`[name="${prefix}_運動の目的"]`);
-    if (!taskName || !targetInput) return;
-    const foundRow = masterExerciseList.slice(1).find(row => String(row[0]).trim().includes(prefix) && String(row[1]).trim() === taskName);
-    if (foundRow && foundRow[5]) {
-        targetInput.value = foundRow[5];
-        targetInput.classList.add('flash-active');
-        setTimeout(() => targetInput.classList.remove('flash-active'), 600);
-    }
-}
-
+/** 検索機能 **/
 async function searchData() {
     const email = document.getElementById('search-email').value;
     const alertEl = document.getElementById('search-alert');
     if (!email) return alert("メールアドレスを入力してください");
     alertEl.style.display = 'none'; document.getElementById('loading').style.display = 'block';
+    
     callGAS({ action: 'find', email: email, id: activeFormId }, async (res) => {
         document.getElementById('loading').style.display = 'none';
         if (!res || !res.data) return alert("履歴はありません");
         const data = res.data;
         if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) alertEl.style.display = 'block';
+        
         updateFaceTab(data);
         
         for (const el of document.querySelectorAll('#mainForm [name]')) {
@@ -324,6 +348,7 @@ async function searchData() {
             else if (!el.dataset.lv) el.value = data[el.name];
         }
 
+        // ICF同期（pollロジック）
         const icfMajors = Array.from(document.querySelectorAll('select[data-lv="major"]'));
         for (const major of icfMajors) {
             const g = major.dataset.group, mVal = String(data[major.name]||"").trim();
@@ -338,6 +363,16 @@ async function searchData() {
                 }
             }
         }
+        
+        // ★ 検索同期後の「推奨目的」再取得（もし空欄なら流し込む）
+        document.querySelectorAll('select[name$="_課題"]').forEach(sel => {
+            if (sel.value) {
+                const prefix = sel.name.split('_')[0];
+                const target = document.querySelector(`[name="${prefix}_運動の目的"]`) || document.querySelector(`[name="${prefix}_推奨目的"]`);
+                if (target && !target.value) handleTaskAutoFill(sel);
+            }
+        });
+
         alert("履歴を同期しました。");
     });
 }
@@ -352,15 +387,15 @@ function pollForValue(el, val) {
     });
 }
 
+/** Face情報表示 **/
 function updateFaceTab(data) {
     const faceArea = document.getElementById('face-img-area');
     if (!faceArea) return;
     faceArea.innerHTML = "<h3>患者詳細情報（Face・動画）</h3>";
     
-    // PDFプレビュー
     if (data["PDFリンク"] && String(data["PDFリンク"]).startsWith("http")) {
         const embedUrl = data["PDFリンク"].replace(/\/view\?usp=sharing|\/view/g, '/preview');
-        const pdfLabel = document.createElement('label'); pdfLabel.innerText = "過去のレポートPDF";
+        const pdfLabel = document.createElement('div'); pdfLabel.className = 'media-label'; pdfLabel.innerText = "過去のレポートPDF";
         faceArea.appendChild(pdfLabel);
         const pdfContainer = document.createElement('div');
         pdfContainer.style = "width:100%; height:500px; overflow-y:scroll; border:1px solid #ddd; border-radius:8px; margin-bottom:25px;";
@@ -368,11 +403,10 @@ function updateFaceTab(data) {
         pdfContainer.appendChild(iframe); faceArea.appendChild(pdfContainer);
     }
     
-    // 画像・動画表示
     Object.keys(data).forEach(key => {
         const url = data[key];
         if (!url || typeof url !== "string" || !url.startsWith("http") || key === "PDFリンク") return;
-        const label = document.createElement('label'); label.innerText = key; faceArea.appendChild(label);
+        const label = document.createElement('div'); label.className = 'media-label'; label.innerText = key; faceArea.appendChild(label);
         if (url.includes("youtu")) {
             let vId = url.includes("youtu.be/") ? url.split("youtu.be/")[1].split(/[?#]/)[0] : url.split("v=")[1].split("&")[0];
             const iframe = document.createElement('iframe');
