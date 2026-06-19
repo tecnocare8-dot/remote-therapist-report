@@ -249,18 +249,21 @@ function render(configRows) {
                     const hint = document.createElement('span'); hint.className = 'auto-fill-hint'; hint.innerText = "※選択すると「運動の目的」が自動入力されます";
                     group.appendChild(hint);
                 }
-            } else if (type === 'textarea') {
+            } else if (type === 'textarea' || limit >= 30) {
+                // ★上限30文字以上の入力項目を一律 textarea 化
                 input = document.createElement('textarea'); 
-                if (limit >= 300) input.rows = 10;
-                else if (limit >= 150) input.rows = 7;
-                else if (limit >= 80) input.rows = 5;
-                else input.rows = 3;
+                if (limit >= 300) {
+                    input.rows = 4; // 300文字前後は余裕を持って4行
+                } else {
+                    input.rows = 3; // 150文字前後は3行固定
+                }
+                input.style.resize = "none"; // 高さ固定（ユーザーによる変形を防止）
             } else {
                 input = document.createElement('input'); input.type = (type === 'email') ? 'email' : 'text';
             }
             
             input.name = name;
-            // ★【復旧】デフォルト文章（E列）の流し込み
+            // ★【維持】デフォルト文章（E列）の流し込み
             if (url && !url.startsWith('http')) {
                 input.value = url;
             }
